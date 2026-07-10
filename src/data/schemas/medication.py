@@ -28,8 +28,7 @@ class Med(DomainModel):
 
     @model_validator(mode="after")
     def unique_active_principles(self):
-        cids = [d.cid for d in self.active_principles]
-        if len(cids) != len(set(cids)):
+        if len(set(self.active_principles)) != len(self.active_principles):
             raise ValueError(t("validation.duplicate_active_principle"))
         return self
 

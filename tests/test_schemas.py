@@ -1,9 +1,11 @@
 """Tests de los modelos de dominio en src/data/schemas/drug.py."""
 
+from datetime import date
+
 import pytest
 from pydantic import ValidationError
 
-from src.data.schemas.drug import ATCCode, Drug, Interaction, SideEffect
+from src.data.schemas import ATCCode, Drug, Interaction, Med, SideEffect
 
 
 def test_atccode_derived_groups():
@@ -64,3 +66,17 @@ def test_drug_inchikey_validation_and_skeleton():
 
 def test_drug_has_no_dosage_field():
     assert "dosage" not in Drug.model_fields
+
+
+def test_med_rejects_duplicate_cids_distinct_objects():
+    a = Drug(cid=33613, name="Amoxicillin")
+    b = Drug(cid=33613, name="Amoxicillin (dup)")  # mismo cid, otro objeto
+    with pytest.raises(ValidationError):
+        Med(
+            ATC_code=ATCCode(code="J01CA04"),
+            name="dup",
+            dosage="500 mg",
+            frequency="cada 8h",
+            start_date=date(2026, 6, 1),
+            active_principles=[a, b],
+        )
