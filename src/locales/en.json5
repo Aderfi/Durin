@@ -4,6 +4,7 @@
   "validation.invalid_severity": "'{value}' is not a valid severity level",
   "validation.invalid_atc_code": "'{code}' is not a valid ATC code",
   "validation.duplicate_active_principle": "Duplicate active principles in medication",
+  "validation.interaction_missing_drug": "An interaction must identify the interacting drug",
   "field.severity.mild": "mild",
   "field.severity.moderate": "moderate",
   "field.severity.severe": "severe"

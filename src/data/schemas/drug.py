@@ -2,7 +2,7 @@ import json
 import re
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from src.data.schemas.base import DomainModel
 from src.data.schemas.types import (
@@ -98,13 +98,27 @@ class SideEffect(DomainModel):
 
 
 class Interaction(DomainModel):
-    interacting_drug_id: ATCCode | None = None  # Optional ID of the interacting drug
-    interacting_drug: str | None = None  # Name/Id of the interacting drug
-    interaction_type: InteractionType | None = None
-    severity: InteractionSeverity | None = None
-    mechanism: str | None = None  # e.g. "CYP3A4 inhibition"
-    description: str | None = None
-    management: str | None = None  # e.g. "avoid combination" / "adjust dose"
+    interacting_drug_id: ATCCode | None = Field(
+        default=None, description="Código ATC del fármaco que interacciona."
+    )
+    interacting_drug: NonEmptyStr | None = Field(
+        default=None, description="Nombre del fármaco que interacciona."
+    )
+    interaction_type: InteractionType | None = Field(
+        default=None, description="Tipo: PD (farmacodinámica) | PK (farmacocinética)."
+    )
+    severity: InteractionSeverity | None = Field(
+        default=None, description="Gravedad: minor | moderate | major | contraindicated."
+    )
+    mechanism: str | None = Field(default=None, description="Mecanismo, p.ej. 'inhibición CYP3A4'.")
+    description: str | None = Field(default=None, description="Descripción libre.")
+    management: str | None = Field(default=None, description="Manejo, p.ej. 'evitar combinación'.")
+
+    @model_validator(mode="after")
+    def require_drug_identity(self):
+        if self.interacting_drug is None and self.interacting_drug_id is None:
+            raise ValueError(t("validation.interaction_missing_drug"))
+        return self
 
 
 class Drug(DomainModel):

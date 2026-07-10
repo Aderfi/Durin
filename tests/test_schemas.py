@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.data.schemas.drug import ATCCode, SideEffect
+from src.data.schemas.drug import ATCCode, Interaction, SideEffect
 
 
 def test_atccode_derived_groups():
@@ -33,3 +33,13 @@ def test_sideeffect_description_optional():
 def test_sideeffect_rejects_empty_name():
     with pytest.raises(ValidationError):
         SideEffect(name="", severity="mild")
+
+
+def test_interaction_requires_drug_identity():
+    with pytest.raises(ValidationError):
+        Interaction(mechanism="CYP3A4 inhibition")  # sin fármaco -> inválida
+
+
+def test_interaction_with_named_drug_ok():
+    inter = Interaction(interacting_drug="warfarina", management="vigilar INR")
+    assert inter.interacting_drug == "warfarina"

@@ -4,6 +4,7 @@
   "validation.invalid_severity": "'{value}' no es un nivel de severidad válido",
   "validation.invalid_atc_code": "El código '{code}' no es válido",
   "validation.duplicate_active_principle": "Principios activos duplicados en la medicación",
+  "validation.interaction_missing_drug": "Una interacción debe identificar al fármaco implicado",
   "field.severity.mild": "leve",
   "field.severity.moderate": "moderada",
   "field.severity.severe": "grave"
