@@ -1,0 +1,29 @@
+"""Type aliases and 'enums' shared across the domain models.
+
+Centralized here to avoid duplication and keep a single source of truth. Categories
+are modeled as `Literal` (lightweight, validated by Pydantic) instead of `enum.Enum`.
+"""
+
+from typing import Annotated, Literal
+
+from pydantic import Field
+
+# Reusable scalars
+type PositiveInt = Annotated[int, Field(gt=0)]
+type NonEmptyStr = Annotated[str, Field(min_length=1)]
+# PubChem Compound ID: positive integer, unique per chemical compound.
+type PubChemCID = Annotated[int, Field(gt=0, le=10**9)]
+
+# Domain categories
+FrequencyCategory = Literal[
+    "very common",   # ≥1/10
+    "common",        # ≥1/100 to <1/10
+    "uncommon",      # ≥1/1,000 to <1/100
+    "rare",          # ≥1/10,000 to <1/1,000
+    "very rare",     # <1/10,000
+]
+
+SeverityLevel = Literal["mild", "moderate", "severe"]
+
+InteractionType = Literal["PD", "PK"]
+InteractionSeverity = Literal["minor", "moderate", "major", "contraindicated"]

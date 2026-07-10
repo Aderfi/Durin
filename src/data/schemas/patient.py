@@ -1,34 +1,28 @@
 import datetime
-from dataclasses import dataclass
-from enum import Enum
-from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import model_validator
 
-type PositiveInt = Annotated[int, Field(gt=0)]
-type NonEmptyStr = Annotated[str, Field(min_length=1)]
-type date = Annotated[datetime.date, Field(pattern=r"\d{4}-\d{2}-\d{2}")]
+from src.data.schemas.base import DomainModel
+from src.data.schemas.medication import Med
+from src.data.schemas.types import NonEmptyStr, PositiveInt
+from src.locales.loader import t
 
-@dataclass
-class Config:
-    str_strip_whitespace = True
-    validate_assignment = True
+_AGE_MARGIN_YEARS = 2  # tolerated gap between declared and computed age
 
-class Patient(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
 
+class Patient(DomainModel):
     id: PositiveInt
     name: NonEmptyStr
     age: PositiveInt
-    birth_date: date
+    birth_date: datetime.date
     number_of_meds: PositiveInt
     polymedicated: bool
     diseases: list[str]
-    medication: dict[str, int | float]
+    medication: list[Med]
 
     @model_validator(mode="after")
     def check_age_matches_birth_date(self):
         computed = (datetime.date.today() - self.birth_date).days // 365
-        if abs(computed - self.age) > 1:
-            raise ValueError("age does not match birth_date")
+        if abs(computed - self.age) >= _AGE_MARGIN_YEARS:
+            raise ValueError(t("validation.age_mismatch"))
         return self

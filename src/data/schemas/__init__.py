@@ -1,4 +1,5 @@
 from .drug import ATCCode, Drug, Interaction, SideEffect
-from .patient import Config, Patient
+from .medication import Med
+from .patient import Patient
 
-__all__ = ["Patient", "Drug", "ATCCode", "SideEffect", "Interaction"]
+__all__ = ["Patient", "Drug", "ATCCode", "SideEffect", "Interaction", "Med"]
