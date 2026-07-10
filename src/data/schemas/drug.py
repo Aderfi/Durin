@@ -19,10 +19,17 @@ _ATC_LOOKUP: dict[str, str] = json.loads(_ATC_DATA_PATH.read_text())
 
 _ATC_PATTERN = re.compile(r"^[A-Z](\d{2}([A-Z]([A-Z](\d{2})?)?)?)?$")
 
+# Longitud del código ATC por nivel jerárquico (1 char L1 ... 7 chars L5).
+_LEVEL_LENGTHS = {1: 1, 2: 3, 3: 4, 4: 5, 5: 7}
+
 
 class ATCCode(DomainModel):
-    code: str
-    name: str | None = Field(default=None, validate_default=True)
+    code: str = Field(description="Código ATC (niveles 1-5), p.ej. 'J01CA04'.")
+    name: str | None = Field(
+        default=None,
+        validate_default=True,
+        description="Nombre oficial del código, resuelto desde el catálogo local.",
+    )
 
     @field_validator("code")
     @classmethod
@@ -39,23 +46,45 @@ class ATCCode(DomainModel):
 
     @property
     def level(self) -> int:
-        """Hierarchical level of ATC code"""
-        length_map = {1: 1, 3: 2, 4: 3, 5: 4, 7: 5}
-        return length_map.get(len(self.code), 0)
+        """Nivel jerárquico del código ATC (0 si la longitud no es válida)."""
+        length_to_level = {length: level for level, length in _LEVEL_LENGTHS.items()}
+        return length_to_level.get(len(self.code), 0)
 
     def get_parent_code(self, level: int) -> str | None:
-        """Returns the parent ATC code at the specified level, or None if not applicable."""
-        level_lengths = {1: 1, 2: 3, 3: 4, 4: 5, 5: 7}
-        target_length = level_lengths.get(level)
+        """Código ancestro al nivel dado, o None si no aplica."""
+        target_length = _LEVEL_LENGTHS.get(level)
         if target_length is None or len(self.code) < target_length:
             return None
         return self.code[:target_length]
 
+    def _group_name(self, level: int) -> str | None:
+        parent = self.get_parent_code(level)
+        return _ATC_LOOKUP.get(parent) if parent else None
+
+    @property
+    def anatomical_group(self) -> str | None:
+        """Nombre del grupo anatómico principal (nivel 1)."""
+        return self._group_name(1)
+
+    @property
+    def therapeutic_group(self) -> str | None:
+        """Nombre del subgrupo terapéutico (nivel 2)."""
+        return self._group_name(2)
+
     @property
     def pharmacological_class(self) -> str | None:
-        """Name of the level 3 ATC (pharmacological class) derived from the code."""
-        parent_code = self.get_parent_code(level=3)
-        return _ATC_LOOKUP.get(parent_code) if parent_code else None
+        """Nombre del subgrupo farmacológico (nivel 3)."""
+        return self._group_name(3)
+
+    @property
+    def chemical_subgroup(self) -> str | None:
+        """Nombre del subgrupo químico (nivel 4)."""
+        return self._group_name(4)
+
+    @property
+    def is_substance(self) -> bool:
+        """True si el código identifica una sustancia (nivel 5)."""
+        return self.level == 5
 
 
 class SideEffect(DomainModel):
