@@ -1,8 +1,9 @@
 {
   "validation.age_mismatch": "La edad no coincide con la fecha de nacimiento",
   "validation.invalid_dosage": "La dosis debe ser un par (cantidad, unidad)",
-  "validation.invalid_severity": "'{value}' is not a valid severity level",
+  "validation.invalid_severity": "'{value}' no es un nivel de severidad válido",
   "validation.invalid_atc_code": "El código '{code}' no es válido",
+  "validation.duplicate_active_principle": "Principios activos duplicados en la medicación",
   "field.severity.mild": "leve",
   "field.severity.moderate": "moderada",
   "field.severity.severe": "grave"

@@ -1,6 +1,10 @@
 {
-  "validation.invalid_atc_code": "'{code}' is not a valid ATC code",
-  "validation.invalid_severity": "'{value}' is not a valid severity level",
+  "validation.age_mismatch": "Age does not match birth date",
   "validation.invalid_dosage": "Dosage must be a tuple of (amount, unit)",
-  "validation.invalid_atc_code": "El código ATC introducido no es válido"
+  "validation.invalid_severity": "'{value}' is not a valid severity level",
+  "validation.invalid_atc_code": "'{code}' is not a valid ATC code",
+  "validation.duplicate_active_principle": "Duplicate active principles in medication",
+  "field.severity.mild": "mild",
+  "field.severity.moderate": "moderate",
+  "field.severity.severe": "severe"
 }
