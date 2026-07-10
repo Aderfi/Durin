@@ -1,4 +1,4 @@
-"""Tests de los modelos de dominio en src/data/schemas/drug.py."""
+"""Tests for the domain models in src/data/schemas/drug.py."""
 
 from datetime import date
 
@@ -9,7 +9,7 @@ from src.data.schemas import ATCCode, Drug, Interaction, Med, SideEffect
 
 
 def test_atccode_derived_groups():
-    atc = ATCCode(code="J01CA04")  # amoxicilina, nivel 5
+    atc = ATCCode(code="J01CA04")  # amoxicillin, level 5
     assert atc.is_substance is True
     assert atc.level == 5
     assert atc.anatomical_group == "ANTIINFECTIVES FOR SYSTEMIC USE"  # J
@@ -21,7 +21,7 @@ def test_atccode_derived_groups():
 
 
 def test_atccode_higher_level_has_no_deeper_groups():
-    atc = ATCCode(code="J01")  # nivel 2
+    atc = ATCCode(code="J01")  # level 2
     assert atc.is_substance is False
     assert atc.therapeutic_group == "ANTIBACTERIALS FOR SYSTEMIC USE"
     assert atc.chemical_subgroup is None
@@ -39,7 +39,7 @@ def test_sideeffect_rejects_empty_name():
 
 def test_interaction_requires_drug_identity():
     with pytest.raises(ValidationError):
-        Interaction(mechanism="CYP3A4 inhibition")  # sin fármaco -> inválida
+        Interaction(mechanism="CYP3A4 inhibition")  # no drug -> invalid
 
 
 def test_interaction_with_named_drug_ok():
@@ -53,7 +53,7 @@ def test_drug_identity_by_cid():
     c = Drug(cid=2244, name="Aspirin")
     assert a == b
     assert a != c
-    assert len({a, b, c}) == 2  # dedup por cid
+    assert len({a, b, c}) == 2  # dedup by cid
 
 
 def test_drug_inchikey_validation_and_skeleton():
@@ -70,7 +70,7 @@ def test_drug_has_no_dosage_field():
 
 def test_med_rejects_duplicate_cids_distinct_objects():
     a = Drug(cid=33613, name="Amoxicillin")
-    b = Drug(cid=33613, name="Amoxicillin (dup)")  # mismo cid, otro objeto
+    b = Drug(cid=33613, name="Amoxicillin (dup)")  # same cid, different object
     with pytest.raises(ValidationError):
         Med(
             ATC_code=ATCCode(code="J01CA04"),

@@ -20,19 +20,19 @@ _ATC_LOOKUP: dict[str, str] = json.loads(_ATC_DATA_PATH.read_text())
 
 _ATC_PATTERN = re.compile(r"^[A-Z](\d{2}([A-Z]([A-Z](\d{2})?)?)?)?$")
 
-# InChIKey: 14 (esqueleto) - 10 (capas) - 1 (protonación), todo mayúsculas.
+# InChIKey: 14 (skeleton) - 10 (layers) - 1 (protonation), all uppercase.
 _INCHIKEY_PATTERN = re.compile(r"^[A-Z]{14}-[A-Z]{10}-[A-Z]$")
 
-# Longitud del código ATC por nivel jerárquico (1 char L1 ... 7 chars L5).
+# ATC code length by hierarchical level (1 char L1 ... 7 chars L5).
 _LEVEL_LENGTHS = {1: 1, 2: 3, 3: 4, 4: 5, 5: 7}
 
 
 class ATCCode(DomainModel):
-    code: str = Field(description="Código ATC (niveles 1-5), p.ej. 'J01CA04'.")
+    code: str = Field(description="ATC code (levels 1-5), e.g. 'J01CA04'.")
     name: str | None = Field(
         default=None,
         validate_default=True,
-        description="Nombre oficial del código, resuelto desde el catálogo local.",
+        description="Official code name, resolved from the local catalog.",
     )
 
     @field_validator("code")
@@ -50,12 +50,12 @@ class ATCCode(DomainModel):
 
     @property
     def level(self) -> int:
-        """Nivel jerárquico del código ATC (0 si la longitud no es válida)."""
+        """Hierarchical level of the ATC code (0 if the length is invalid)."""
         length_to_level = {length: level for level, length in _LEVEL_LENGTHS.items()}
         return length_to_level.get(len(self.code), 0)
 
     def get_parent_code(self, level: int) -> str | None:
-        """Código ancestro al nivel dado, o None si no aplica."""
+        """Ancestor code at the given level, or None if not applicable."""
         target_length = _LEVEL_LENGTHS.get(level)
         if target_length is None or len(self.code) < target_length:
             return None
@@ -67,61 +67,61 @@ class ATCCode(DomainModel):
 
     @property
     def anatomical_group(self) -> str | None:
-        """Nombre del grupo anatómico principal (nivel 1)."""
+        """Name of the main anatomical group (level 1)."""
         return self._group_name(1)
 
     @property
     def therapeutic_group(self) -> str | None:
-        """Nombre del subgrupo terapéutico (nivel 2)."""
+        """Name of the therapeutic subgroup (level 2)."""
         return self._group_name(2)
 
     @property
     def pharmacological_class(self) -> str | None:
-        """Nombre del subgrupo farmacológico (nivel 3)."""
+        """Name of the pharmacological subgroup (level 3)."""
         return self._group_name(3)
 
     @property
     def chemical_subgroup(self) -> str | None:
-        """Nombre del subgrupo químico (nivel 4)."""
+        """Name of the chemical subgroup (level 4)."""
         return self._group_name(4)
 
     @property
     def is_substance(self) -> bool:
-        """True si el código identifica una sustancia (nivel 5)."""
+        """True if the code identifies a substance (level 5)."""
         return self.level == 5
 
 
 class SideEffect(DomainModel):
-    name: NonEmptyStr = Field(description="Nombre del efecto adverso.")
+    name: NonEmptyStr = Field(description="Name of the adverse effect.")
     description: str | None = Field(
-        default=None, description="Descripción clínica opcional."
+        default=None, description="Optional clinical description."
     )
-    severity: SeverityLevel = Field(description="Gravedad: mild | moderate | severe.")
+    severity: SeverityLevel = Field(description="Severity: mild | moderate | severe.")
     frequency: FrequencyCategory | None = Field(
-        default=None, description="Frecuencia poblacional del efecto, si se conoce."
+        default=None, description="Population frequency of the effect, if known."
     )
 
 
 class Interaction(DomainModel):
     interacting_drug_id: ATCCode | None = Field(
-        default=None, description="Código ATC del fármaco que interacciona."
+        default=None, description="ATC code of the interacting drug."
     )
     interacting_drug: NonEmptyStr | None = Field(
-        default=None, description="Nombre del fármaco que interacciona."
+        default=None, description="Name of the interacting drug."
     )
     interaction_type: InteractionType | None = Field(
-        default=None, description="Tipo: PD (farmacodinámica) | PK (farmacocinética)."
+        default=None, description="Type: PD (pharmacodynamic) | PK (pharmacokinetic)."
     )
     severity: InteractionSeverity | None = Field(
         default=None,
-        description="Gravedad: minor | moderate | major | contraindicated.",
+        description="Severity: minor | moderate | major | contraindicated.",
     )
     mechanism: str | None = Field(
-        default=None, description="Mecanismo, p.ej. 'inhibición CYP3A4'."
+        default=None, description="Mechanism, e.g. 'CYP3A4 inhibition'."
     )
-    description: str | None = Field(default=None, description="Descripción libre.")
+    description: str | None = Field(default=None, description="Free-text description.")
     management: str | None = Field(
-        default=None, description="Manejo, p.ej. 'evitar combinación'."
+        default=None, description="Management, e.g. 'avoid combination'."
     )
 
     @model_validator(mode="after")
@@ -133,25 +133,25 @@ class Interaction(DomainModel):
 
 class Drug(DomainModel):
     cid: PubChemCID = Field(
-        description="PubChem Compound ID; identidad química del principio activo."
+        description="PubChem Compound ID; chemical identity of the active principle."
     )
-    name: NonEmptyStr = Field(description="Nombre del compuesto.")
+    name: NonEmptyStr = Field(description="Compound name.")
     chemical_group: ATCCode | None = Field(
         default=None,
-        description="Clasificación ATC, si se conoce (no viene de PubChem).",
+        description="ATC classification, if known (not provided by PubChem).",
     )
     molecular_formula: NonEmptyStr | None = Field(
-        default=None, description="Fórmula molecular."
+        default=None, description="Molecular formula."
     )
-    smiles: NonEmptyStr | None = Field(default=None, description="Notación SMILES.")
+    smiles: NonEmptyStr | None = Field(default=None, description="SMILES notation.")
     inchikey: str | None = Field(
-        default=None, description="InChIKey (hash estructural estándar)."
+        default=None, description="InChIKey (standard structural hash)."
     )
     side_effects: list[SideEffect] = Field(
-        default_factory=list, description="Efectos adversos conocidos."
+        default_factory=list, description="Known adverse effects."
     )
     interactions: list[Interaction] = Field(
-        default_factory=list, description="Interacciones conocidas."
+        default_factory=list, description="Known interactions."
     )
 
     @field_validator("inchikey")
@@ -169,10 +169,10 @@ class Drug(DomainModel):
 
     @property
     def inchikey_skeleton(self) -> str | None:
-        """Bloque de conectividad (14 primeros chars del InChIKey); agrupa estereoisómeros/sales."""
+        """First 14 InChIKey chars (connectivity block); groups stereoisomers."""
         return self.inchikey[:14] if self.inchikey else None
 
     @property
     def has_atc(self) -> bool:
-        """True si el fármaco tiene clasificación ATC asignada."""
+        """True if the drug has an assigned ATC classification."""
         return self.chemical_group is not None
