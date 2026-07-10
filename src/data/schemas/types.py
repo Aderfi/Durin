@@ -1,16 +1,16 @@
 """Type aliases and 'enums' shared across the domain models.
 
-Centralized here to avoid duplication and keep a single source of truth. Categories
-are modeled as `Literal` (lightweight, validated by Pydantic) instead of `enum.Enum`.
+Centralized here to avoid duplication and keep a single source of truth.
+Categories are modeled as `Literal` (validated by Pydantic) instead of `enum.Enum`.
 """
 
 from typing import Annotated, Literal
 
 from pydantic import Field
 
-# Reusable scalars
 type PositiveInt = Annotated[int, Field(gt=0)]
 type NonEmptyStr = Annotated[str, Field(min_length=1)]
+
 # PubChem Compound ID: positive integer, unique per chemical compound.
 type PubChemCID = Annotated[int, Field(gt=0, le=10**9)]
 
