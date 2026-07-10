@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.data.schemas.drug import ATCCode, Interaction, SideEffect
+from src.data.schemas.drug import ATCCode, Drug, Interaction, SideEffect
 
 
 def test_atccode_derived_groups():
@@ -43,3 +43,24 @@ def test_interaction_requires_drug_identity():
 def test_interaction_with_named_drug_ok():
     inter = Interaction(interacting_drug="warfarina", management="vigilar INR")
     assert inter.interacting_drug == "warfarina"
+
+
+def test_drug_identity_by_cid():
+    a = Drug(cid=33613, name="Amoxicillin")
+    b = Drug(cid=33613, name="Amoxicillin (otra fuente)")
+    c = Drug(cid=2244, name="Aspirin")
+    assert a == b
+    assert a != c
+    assert len({a, b, c}) == 2  # dedup por cid
+
+
+def test_drug_inchikey_validation_and_skeleton():
+    drug = Drug(cid=33613, name="Amoxicillin", inchikey="LSQZJLSUYDQPKJ-NJBDSQKTSA-N")
+    assert drug.inchikey_skeleton == "LSQZJLSUYDQPKJ"
+    assert drug.has_atc is False
+    with pytest.raises(ValidationError):
+        Drug(cid=33613, name="Amoxicillin", inchikey="no-es-valido")
+
+
+def test_drug_has_no_dosage_field():
+    assert "dosage" not in Drug.model_fields

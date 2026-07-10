@@ -5,6 +5,7 @@
   "validation.invalid_atc_code": "El código '{code}' no es válido",
   "validation.duplicate_active_principle": "Principios activos duplicados en la medicación",
   "validation.interaction_missing_drug": "Una interacción debe identificar al fármaco implicado",
+  "validation.invalid_inchikey": "El InChIKey '{value}' no tiene formato válido",
   "field.severity.mild": "leve",
   "field.severity.moderate": "moderada",
   "field.severity.severe": "grave"

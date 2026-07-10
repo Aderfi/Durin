@@ -20,6 +20,9 @@ _ATC_LOOKUP: dict[str, str] = json.loads(_ATC_DATA_PATH.read_text())
 
 _ATC_PATTERN = re.compile(r"^[A-Z](\d{2}([A-Z]([A-Z](\d{2})?)?)?)?$")
 
+# InChIKey: 14 (esqueleto) - 10 (capas) - 1 (protonación), todo mayúsculas.
+_INCHIKEY_PATTERN = re.compile(r"^[A-Z]{14}-[A-Z]{10}-[A-Z]$")
+
 # Longitud del código ATC por nivel jerárquico (1 char L1 ... 7 chars L5).
 _LEVEL_LENGTHS = {1: 1, 2: 3, 3: 4, 4: 5, 5: 7}
 
@@ -122,14 +125,36 @@ class Interaction(DomainModel):
 
 
 class Drug(DomainModel):
-    cid: PubChemCID  # PubChem Compound ID — stable chemical identity of the active principle
-    name: str
-    dosage: tuple[int | float, str] = Field(default_factory=lambda: (0, "mg"))
-    # Optional ATC: a compound resolved by CID may have no ATC classification.
-    chemical_group: ATCCode | None = None
-    # Chemical identity (populated from PubChem by src.data.repository.get_drug_by_cid).
-    molecular_formula: str | None = None
-    smiles: str | None = None
-    inchikey: str | None = None
-    side_effects: list[SideEffect] = Field(default_factory=list)
-    interactions: list[Interaction] = Field(default_factory=list)
+    cid: PubChemCID = Field(description="PubChem Compound ID; identidad química del principio activo.")
+    name: NonEmptyStr = Field(description="Nombre del compuesto.")
+    chemical_group: ATCCode | None = Field(
+        default=None, description="Clasificación ATC, si se conoce (no viene de PubChem)."
+    )
+    molecular_formula: NonEmptyStr | None = Field(default=None, description="Fórmula molecular.")
+    smiles: NonEmptyStr | None = Field(default=None, description="Notación SMILES.")
+    inchikey: str | None = Field(default=None, description="InChIKey (hash estructural estándar).")
+    side_effects: list[SideEffect] = Field(default_factory=list, description="Efectos adversos conocidos.")
+    interactions: list[Interaction] = Field(default_factory=list, description="Interacciones conocidas.")
+
+    @field_validator("inchikey")
+    @classmethod
+    def validate_inchikey(cls, v: str | None) -> str | None:
+        if v is not None and not _INCHIKEY_PATTERN.match(v):
+            raise ValueError(t("validation.invalid_inchikey", value=v))
+        return v
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Drug) and self.cid == other.cid
+
+    def __hash__(self) -> int:
+        return hash(self.cid)
+
+    @property
+    def inchikey_skeleton(self) -> str | None:
+        """Bloque de conectividad (14 primeros chars del InChIKey); agrupa estereoisómeros/sales."""
+        return self.inchikey[:14] if self.inchikey else None
+
+    @property
+    def has_atc(self) -> bool:
+        """True si el fármaco tiene clasificación ATC asignada."""
+        return self.chemical_group is not None
