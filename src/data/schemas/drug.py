@@ -93,7 +93,9 @@ class ATCCode(DomainModel):
 
 class SideEffect(DomainModel):
     name: NonEmptyStr = Field(description="Nombre del efecto adverso.")
-    description: str | None = Field(default=None, description="Descripción clínica opcional.")
+    description: str | None = Field(
+        default=None, description="Descripción clínica opcional."
+    )
     severity: SeverityLevel = Field(description="Gravedad: mild | moderate | severe.")
     frequency: FrequencyCategory | None = Field(
         default=None, description="Frecuencia poblacional del efecto, si se conoce."
@@ -111,11 +113,16 @@ class Interaction(DomainModel):
         default=None, description="Tipo: PD (farmacodinámica) | PK (farmacocinética)."
     )
     severity: InteractionSeverity | None = Field(
-        default=None, description="Gravedad: minor | moderate | major | contraindicated."
+        default=None,
+        description="Gravedad: minor | moderate | major | contraindicated.",
     )
-    mechanism: str | None = Field(default=None, description="Mecanismo, p.ej. 'inhibición CYP3A4'.")
+    mechanism: str | None = Field(
+        default=None, description="Mecanismo, p.ej. 'inhibición CYP3A4'."
+    )
     description: str | None = Field(default=None, description="Descripción libre.")
-    management: str | None = Field(default=None, description="Manejo, p.ej. 'evitar combinación'.")
+    management: str | None = Field(
+        default=None, description="Manejo, p.ej. 'evitar combinación'."
+    )
 
     @model_validator(mode="after")
     def require_drug_identity(self):
@@ -125,16 +132,27 @@ class Interaction(DomainModel):
 
 
 class Drug(DomainModel):
-    cid: PubChemCID = Field(description="PubChem Compound ID; identidad química del principio activo.")
+    cid: PubChemCID = Field(
+        description="PubChem Compound ID; identidad química del principio activo."
+    )
     name: NonEmptyStr = Field(description="Nombre del compuesto.")
     chemical_group: ATCCode | None = Field(
-        default=None, description="Clasificación ATC, si se conoce (no viene de PubChem)."
+        default=None,
+        description="Clasificación ATC, si se conoce (no viene de PubChem).",
     )
-    molecular_formula: NonEmptyStr | None = Field(default=None, description="Fórmula molecular.")
+    molecular_formula: NonEmptyStr | None = Field(
+        default=None, description="Fórmula molecular."
+    )
     smiles: NonEmptyStr | None = Field(default=None, description="Notación SMILES.")
-    inchikey: str | None = Field(default=None, description="InChIKey (hash estructural estándar).")
-    side_effects: list[SideEffect] = Field(default_factory=list, description="Efectos adversos conocidos.")
-    interactions: list[Interaction] = Field(default_factory=list, description="Interacciones conocidas.")
+    inchikey: str | None = Field(
+        default=None, description="InChIKey (hash estructural estándar)."
+    )
+    side_effects: list[SideEffect] = Field(
+        default_factory=list, description="Efectos adversos conocidos."
+    )
+    interactions: list[Interaction] = Field(
+        default_factory=list, description="Interacciones conocidas."
+    )
 
     @field_validator("inchikey")
     @classmethod
