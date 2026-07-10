@@ -2,31 +2,8 @@ import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from src.data.schemas import __all__
 from src.locales.loader import t
-
-
-class Patient(BaseModel):
-    id: int
-    name: str
-    age: int
-    birth_date: datetime.date  # Format: datetime.strftime("%Y-%m-%d")
-    number_of_meds: int
-    polymedicated: bool
-    diseases: list[str]
-    medication: dict[str, int | float]  # Format: {medication_name: dosage}
-
-    ...
-
-class Drug(BaseModel):
-    id: int
-    name: str
-    dosage: tuple[int | float, str] = Field(default_factory=lambda: (0, "mg"))  # Format: (amount, unit)
-    chemical_group: str
-    pharmacological_class: str
-    side_effects: list[str] = Field(default_factory=list)  # List of side effects
-    interactions: list[str] = Field(default_factory=list)  # List of interactions
-
-    ...
 
 
 #@field_validator
