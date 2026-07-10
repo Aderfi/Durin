@@ -23,7 +23,7 @@ Not yet built: the interaction/risk engine, the AI layer, and any user-facing in
 
 ## Stack
 
-Python 3.14 · Pydantic v2 · FastAPI · BeautifulSoup (scraping) · pandas / scikit-learn (analysis, planned)
+Python 3.14 · Pydantic v2 · FastAPI · BeautifulSoup (scraping) · polars / scikit-learn (analysis, planned)
 
 ## Layout
 
