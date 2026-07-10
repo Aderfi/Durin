@@ -9,6 +9,7 @@ from src.data.schemas.types import (
     FrequencyCategory,
     InteractionSeverity,
     InteractionType,
+    NonEmptyStr,
     PubChemCID,
     SeverityLevel,
 )
@@ -88,10 +89,12 @@ class ATCCode(DomainModel):
 
 
 class SideEffect(DomainModel):
-    name: str
-    description: str
-    severity: SeverityLevel
-    frequency: FrequencyCategory | None = None
+    name: NonEmptyStr = Field(description="Nombre del efecto adverso.")
+    description: str | None = Field(default=None, description="Descripción clínica opcional.")
+    severity: SeverityLevel = Field(description="Gravedad: mild | moderate | severe.")
+    frequency: FrequencyCategory | None = Field(
+        default=None, description="Frecuencia poblacional del efecto, si se conoce."
+    )
 
 
 class Interaction(DomainModel):

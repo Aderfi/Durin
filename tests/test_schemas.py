@@ -1,6 +1,9 @@
 """Tests de los modelos de dominio en src/data/schemas/drug.py."""
 
-from src.data.schemas.drug import ATCCode
+import pytest
+from pydantic import ValidationError
+
+from src.data.schemas.drug import ATCCode, SideEffect
 
 
 def test_atccode_derived_groups():
@@ -20,3 +23,13 @@ def test_atccode_higher_level_has_no_deeper_groups():
     assert atc.is_substance is False
     assert atc.therapeutic_group == "ANTIBACTERIALS FOR SYSTEMIC USE"
     assert atc.chemical_subgroup is None
+
+
+def test_sideeffect_description_optional():
+    se = SideEffect(name="rash", severity="mild")
+    assert se.description is None
+
+
+def test_sideeffect_rejects_empty_name():
+    with pytest.raises(ValidationError):
+        SideEffect(name="", severity="mild")
