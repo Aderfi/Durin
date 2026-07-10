@@ -1,0 +1,12 @@
+default_install_hook_types: [pre-commit]
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.21   # match installed ruff; keep updated via `pre-commit autoupdate`
+    hooks:
+      # Linter: --fix modernizes typing (UP), sorts imports (I), clears warnings (W).
+      - id: ruff-check
+        args: [--fix]
+        types_or: [python, pyi]
+      # Formatter: fixes whitespace / blank lines / layout.
+      - id: ruff-format
+        types_or: [python, pyi]

@@ -15,5 +15,21 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.6.0",
     "pytest>=9.1.1",
+    "ruff>=0.15.21",
+]
+
+[tool.ruff]
+# target-version intentionally omitted: inferred from requires-python (>=3.14),
+# so lint/format re-targets automatically when the project's Python bumps.
+extend-exclude = ["notebooks", ".venv", "data", "models", "graphify-out"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings (W291/W293 trailing & blank-line whitespace)
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (Optional[x]->x|None, List->list, etc.)
 ]
