@@ -15,3 +15,7 @@ graphify-out/
 # ATC scraper artifacts (progress state + duplicate of src/data/atc/codes.json)
 scripts/checkpoint.json
 scripts/codes.json
+
+# Runtime logs and Tier 2 pharmacovigilance cache
+logs/
+src/data/pharmacovigilance/_cache/
