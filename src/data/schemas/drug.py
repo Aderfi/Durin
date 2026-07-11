@@ -144,6 +144,10 @@ class Interaction(DomainModel):
     interacting_drug: NonEmptyStr | None = Field(
         default=None, description="Name of the interacting drug."
     )
+    interacting_cid: PubChemCID | None = Field(
+        default=None,
+        description="PubChem CID of the interacting drug, for chemical-identity pairing.",
+    )
     interaction_type: InteractionType | None = Field(
         default=None, description="Type: PD (pharmacodynamic) | PK (pharmacokinetic)."
     )

@@ -59,6 +59,7 @@ def test_interactions_assembled_with_provenance(tmp_path):
     assert len(inter) == 1
     assert inter[0].mechanism == "Increased risk of bleeding"
     assert inter[0].interacting_drug == "CID 5090"  # deterministic fallback identity
+    assert inter[0].interacting_cid == 5090  # chemical identity for pairing
     assert inter[0].provenance.source == "TWOSIDES"
 
 

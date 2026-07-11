@@ -63,6 +63,7 @@ class PharmacovigilanceStore:
             out.append(
                 Interaction(
                     interacting_drug=name,
+                    interacting_cid=raw.get("interacting_cid"),
                     interaction_type="PD",
                     mechanism=raw["mechanism"],
                     provenance=Provenance(

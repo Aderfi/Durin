@@ -85,6 +85,15 @@ def test_interaction_with_named_drug_ok():
     assert inter.interacting_drug == "warfarina"
 
 
+def test_interaction_carries_optional_interacting_cid():
+    inter = Interaction(
+        interacting_drug="warfarin", interacting_cid=5090, provenance=_prov()
+    )
+    assert inter.interacting_cid == 5090
+    bare = Interaction(interacting_drug="warfarin", provenance=_prov())
+    assert bare.interacting_cid is None
+
+
 def test_drug_identity_by_cid():
     a = Drug(cid=33613, name="Amoxicillin")
     b = Drug(cid=33613, name="Amoxicillin (otra fuente)")
