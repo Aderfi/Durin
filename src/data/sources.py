@@ -95,3 +95,29 @@ def parse_twosides(path: Path) -> dict[int, list[dict]]:
             )
     logger.info("Parsed TWOSIDES: %d compounds", len(by_cid))
     return by_cid
+
+
+def parse_chembl_moa(path: Path, unichem: dict[str, int]) -> dict[int, list[dict]]:
+    """Parse a ChEMBL mechanism-of-action CSV into per-CID mechanism dicts.
+
+    ``unichem`` maps ChEMBL molecule ids to PubChem CIDs. A ChEMBL id with no
+    mapping is logged and skipped (no silent drop).
+    """
+    frame = pl.read_csv(path)
+    by_cid: dict[int, list[dict]] = {}
+    for row in frame.iter_rows(named=True):
+        chembl_id = row["molecule_chembl_id"]
+        cid = unichem.get(chembl_id)
+        if cid is None:
+            logger.warning("No UniChem CID for ChEMBL id, skipping: %s", chembl_id)
+            continue
+        by_cid.setdefault(cid, []).append(
+            {
+                "mechanism": row["mechanism_of_action"],
+                "action_type": row["action_type"],
+                "source": "ChEMBL",
+                "source_id": chembl_id,
+            }
+        )
+    logger.info("Parsed ChEMBL MoA: %d compounds", len(by_cid))
+    return by_cid

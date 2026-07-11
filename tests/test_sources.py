@@ -1,7 +1,12 @@
 import logging
 from pathlib import Path
 
-from src.data.sources import parse_sider, parse_twosides, stitch_to_cid
+from src.data.sources import (
+    parse_chembl_moa,
+    parse_sider,
+    parse_twosides,
+    stitch_to_cid,
+)
 
 
 def test_stitch_to_cid_flat():
@@ -61,3 +66,30 @@ def test_parse_twosides_symmetric(tmp_path):
     assert entry["interacting_cid"] == 5090
     assert entry["meddra_pt"] == "Gastrointestinal haemorrhage"
     assert entry["source"] == "TWOSIDES"
+
+
+# Minimal ChEMBL mechanism CSV: molecule_chembl_id, mechanism_of_action, action_type.
+_CHEMBL_CSV = (
+    "molecule_chembl_id,mechanism_of_action,action_type\n"
+    "CHEMBL25,Cyclooxygenase inhibitor,INHIBITOR\n"
+)
+
+
+def test_parse_chembl_moa_maps_to_cid(tmp_path):
+    p = tmp_path / "chembl.csv"
+    p.write_text(_CHEMBL_CSV, encoding="utf-8")
+    result = parse_chembl_moa(p, unichem={"CHEMBL25": 2244})
+    assert 2244 in result
+    moa = result[2244][0]
+    assert moa["mechanism"] == "Cyclooxygenase inhibitor"
+    assert moa["action_type"] == "INHIBITOR"
+    assert moa["source"] == "ChEMBL"
+
+
+def test_parse_chembl_moa_skips_unmapped(tmp_path, caplog):
+    p = tmp_path / "chembl.csv"
+    p.write_text(_CHEMBL_CSV, encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        result = parse_chembl_moa(p, unichem={})  # no mapping for CHEMBL25
+    assert result == {}
+    assert any("CHEMBL25" in r.message for r in caplog.records)
