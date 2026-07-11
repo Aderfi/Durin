@@ -4,14 +4,25 @@ Pure parsing and I/O; no Pydantic model assembly (that is ``enrichment.py``).
 Every mapping failure is logged — never swallowed.
 """
 
+import json
 import re
 from pathlib import Path
 
 import polars as pl
+import requests
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_OPENFDA_LABEL = "https://api.fda.gov/drug/label.json"
+_OPENFDA_TIMEOUT = 15  # seconds
 
 # STITCH compound id, e.g. "CID100002244" (flat) or "CID000002244" (stereo).
 _STITCH_PATTERN = re.compile(r"^CID[01](\d+)$")
@@ -121,3 +132,54 @@ def parse_chembl_moa(path: Path, unichem: dict[str, int]) -> dict[int, list[dict
         )
     logger.info("Parsed ChEMBL MoA: %d compounds", len(by_cid))
     return by_cid
+
+
+@retry(
+    retry=retry_if_exception_type(requests.RequestException),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, max=8),
+    reraise=True,
+)
+def _openfda_get(active_name: str) -> dict | None:
+    """Query openFDA drug/label by active ingredient; None on 404."""
+    params = {"search": f'active_ingredient:"{active_name}"', "limit": 1}
+    resp = requests.get(_OPENFDA_LABEL, params=params, timeout=_OPENFDA_TIMEOUT)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _first(value: list[str] | None) -> str | None:
+    """openFDA returns single-element lists for label sections."""
+    return value[0] if value else None
+
+
+def fetch_openfda_label(cid: int, active_name: str, cache_dir: Path) -> dict | None:
+    """Fetch openFDA label sections for a CID, caching the result per CID.
+
+    Returns ``{adverse_reactions, mechanism_of_action, source_id}`` or None.
+    Reads the cache first; on a miss, calls openFDA and writes the cache.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"{cid}.json"
+    if cache_file.exists():
+        return json.loads(cache_file.read_text(encoding="utf-8"))
+
+    try:
+        payload = _openfda_get(active_name)
+    except requests.RequestException:
+        logger.error("openFDA request failed for CID %d (%s)", cid, active_name)
+        return None
+    if not payload or not payload.get("results"):
+        logger.warning("No openFDA label for CID %d (%s)", cid, active_name)
+        return None
+
+    result = payload["results"][0]
+    record = {
+        "adverse_reactions": _first(result.get("adverse_reactions")),
+        "mechanism_of_action": _first(result.get("mechanism_of_action")),
+        "source_id": result.get("set_id", active_name),
+    }
+    cache_file.write_text(json.dumps(record), encoding="utf-8")
+    return record

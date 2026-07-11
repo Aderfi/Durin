@@ -1,7 +1,9 @@
+import json
 import logging
 from pathlib import Path
 
 from src.data.sources import (
+    fetch_openfda_label,
     parse_chembl_moa,
     parse_sider,
     parse_twosides,
@@ -93,3 +95,22 @@ def test_parse_chembl_moa_skips_unmapped(tmp_path, caplog):
         result = parse_chembl_moa(p, unichem={})  # no mapping for CHEMBL25
     assert result == {}
     assert any("CHEMBL25" in r.message for r in caplog.records)
+
+
+def test_fetch_openfda_uses_cache(tmp_path):
+    cache = tmp_path / "_cache"
+    cache.mkdir()
+    (cache / "2244.json").write_text(
+        json.dumps(
+            {
+                "adverse_reactions": "GI bleeding.",
+                "mechanism_of_action": "COX inhibition.",
+                "source_id": "cached",
+            }
+        ),
+        encoding="utf-8",
+    )
+    # No network: cache hit returns the stored record.
+    result = fetch_openfda_label(2244, "aspirin", cache_dir=cache)
+    assert result["adverse_reactions"] == "GI bleeding."
+    assert result["source_id"] == "cached"
