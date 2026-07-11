@@ -52,23 +52,40 @@ def test_parse_sider_groups_by_cid(tmp_path):
     assert first["source_id"] == "CID100002244"
 
 
-# Minimal TWOSIDES CSV: drug_1 CID, drug_2 CID, condition MedDRA name, PRR.
+# Real TWOSIDES header (note the misspelled drug_1_rxnorn_id).
 _TWOSIDES_CSV = (
-    "drug_1_cid,drug_2_cid,condition_meddra_name,prr\n"
-    "2244,5090,Gastrointestinal haemorrhage,4.2\n"
+    "drug_1_rxnorn_id,drug_1_concept_name,drug_2_rxnorm_id,drug_2_concept_name,"
+    "condition_meddra_id,condition_concept_name,A,B,C,D,PRR,PRR_error,"
+    "mean_reporting_frequency\n"
+    "10355,Temazepam,136411,sildenafil,10003239,Arthralgia,7,149,24,1536,"
+    "2.91667,0.421275,0.0448718\n"
 )
+
+# RxNorm -> PubChem CID map (supplied to the ETL, analogous to the ChEMBL unichem map).
+_RXNORM_TO_CID = {"10355": 5391, "136411": 135398744}
 
 
 def test_parse_twosides_symmetric(tmp_path):
     p = tmp_path / "twosides.csv"
     p.write_text(_TWOSIDES_CSV, encoding="utf-8")
-    result = parse_twosides(p)
+    result = parse_twosides(p, rxnorm_to_cid=_RXNORM_TO_CID)
     # Interaction indexed under both members of the pair.
-    assert 2244 in result and 5090 in result
-    entry = result[2244][0]
-    assert entry["interacting_cid"] == 5090
-    assert entry["meddra_pt"] == "Gastrointestinal haemorrhage"
+    assert 5391 in result and 135398744 in result
+    entry = result[5391][0]
+    assert entry["interacting_cid"] == 135398744
+    assert entry["interacting_name"] == "sildenafil"
+    assert entry["meddra_pt"] == "Arthralgia"
+    assert entry["meddra_code"] == "10003239"
     assert entry["source"] == "TWOSIDES"
+
+
+def test_parse_twosides_skips_unmapped_rxnorm(tmp_path, caplog):
+    p = tmp_path / "twosides.csv"
+    p.write_text(_TWOSIDES_CSV, encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        result = parse_twosides(p, rxnorm_to_cid={"10355": 5391})  # 136411 unmapped
+    assert result == {}
+    assert any("RxNorm" in r.message for r in caplog.records)
 
 
 # Minimal ChEMBL mechanism CSV: molecule_chembl_id, mechanism_of_action, action_type.

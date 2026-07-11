@@ -14,11 +14,17 @@ Source downloads:
 
 import argparse
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.data.sources import parse_chembl_moa, parse_sider, parse_twosides
-from src.utils.logging import get_logger
+ROOT = Path.cwd().parent  # el notebook vive en notebooks/ -> raíz del repo
+sys.path.insert(
+    0, str(ROOT)
+)  # para poder importar src.data.sources y src.utils.logging
+
+from src.data.sources import parse_chembl_moa, parse_sider, parse_twosides  # noqa: E402
+from src.utils.logging import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -30,7 +36,24 @@ class BuildInputs:
     sider_se: Path
     twosides: Path
     chembl_moa: Path
-    unichem: dict[str, int]
+    unichem: dict[str, int]  # ChEMBL id -> PubChem CID
+    rxnorm_to_cid: dict[str, int]  # RxNorm id -> PubChem CID (for TWOSIDES)
+
+
+def _load_tsv_map(path: Path) -> dict[str, int]:
+    """Load a two-column ``id\\tcid`` TSV into ``{id: cid}``.
+
+    Skips any header/malformed line whose second column is not an integer, so
+    UniChem's header row is tolerated.
+    """
+    mapping: dict[str, int] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        parts = line.split("\t")
+        if len(parts) != 2 or not parts[1].strip().isdigit():
+            continue
+        mapping[parts[0].strip()] = int(parts[1].strip())
+    logger.info("Loaded %d id->CID mappings from %s", len(mapping), path)
+    return mapping
 
 
 def _write(out_dir: Path, name: str, data: dict) -> None:
@@ -50,7 +73,10 @@ def build_datasets(inputs: BuildInputs, out_dir: Path) -> None:
     _write(
         out_dir,
         "twosides_ddi.json",
-        {str(k): v for k, v in parse_twosides(inputs.twosides).items()},
+        {
+            str(k): v
+            for k, v in parse_twosides(inputs.twosides, inputs.rxnorm_to_cid).items()
+        },
     )
     _write(
         out_dir,
@@ -73,15 +99,34 @@ def main() -> None:
         "--unichem",
         type=Path,
         required=True,
-        help="JSON mapping of ChEMBL id -> PubChem CID.",
+        help="TSV mapping ChEMBL id -> PubChem CID (UniChem src1src22).",
+    )
+    parser.add_argument(
+        "--rxnorm",
+        type=Path,
+        required=True,
+        help="TSV mapping RxNorm id -> PubChem CID (for TWOSIDES).",
     )
     parser.add_argument("--out", type=Path, default=Path("src/data/pharmacovigilance"))
     args = parser.parse_args()
-    unichem = json.loads(args.unichem.read_text(encoding="utf-8"))
+    unichem = _load_tsv_map(args.unichem)
+    rxnorm_to_cid = _load_tsv_map(args.rxnorm)
+
     build_datasets(
-        BuildInputs(args.sider_se, args.twosides, args.chembl_moa, unichem), args.out
+        BuildInputs(
+            args.sider_se, args.twosides, args.chembl_moa, unichem, rxnorm_to_cid
+        ),
+        args.out,
     )
 
 
 if __name__ == "__main__":
     main()
+
+# Example:
+#   python scripts/build_pharmacovigilance.py \
+#     --sider-se tmp/meddra_all_se.tsv \
+#     --twosides tmp/TWOSIDES.csv \
+#     --chembl-moa tmp/chembl_moa.csv \
+#     --unichem tmp/src1src22.txt \
+#     --rxnorm tmp/rxnorm_to_cid.tsv

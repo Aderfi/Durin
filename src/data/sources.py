@@ -102,26 +102,49 @@ def parse_sider(se_path: Path, freq_path: Path | None = None) -> dict[int, list[
     return by_cid
 
 
-def parse_twosides(path: Path) -> dict[int, list[dict]]:
+def parse_twosides(
+    path: Path, rxnorm_to_cid: dict[str, int]
+) -> dict[int, list[dict]]:
     """Parse a TWOSIDES CSV into per-CID interaction dicts (indexed both ways).
 
-    Each drug-drug row yields an entry under both CIDs of the pair so a lookup by
-    either compound finds the interaction.
+    TWOSIDES identifies drugs by RxNorm id, so ``rxnorm_to_cid`` maps each RxNorm
+    id to a PubChem CID. A pair with either drug unmapped is logged and skipped.
+    Each row yields an entry under both CIDs of the pair, carrying the other
+    drug's name (``interacting_name``) and the condition's MedDRA id/term.
+
+    Note the source header misspells the first column as ``drug_1_rxnorn_id``.
     """
-    frame = pl.read_csv(path)
+    frame = pl.read_csv(path, infer_schema_length=0)  # read all as str; ids kept exact
     by_cid: dict[int, list[dict]] = {}
     for row in frame.iter_rows(named=True):
-        a, b = int(row["drug_1_cid"]), int(row["drug_2_cid"])
-        meddra_pt = row["condition_meddra_name"]
-        mechanism = f"Increased risk of {meddra_pt} (TWOSIDES PRR={row['prr']})"
-        for cid, other in ((a, b), (b, a)):
+        rx1 = row["drug_1_rxnorn_id"]
+        rx2 = row["drug_2_rxnorm_id"]
+        cid1 = rxnorm_to_cid.get(rx1)
+        cid2 = rxnorm_to_cid.get(rx2)
+        if cid1 is None or cid2 is None:
+            logger.warning(
+                "No CID for RxNorm pair %s/%s, skipping interaction", rx1, rx2
+            )
+            continue
+
+        meddra_pt = row["condition_concept_name"]
+        meddra_code = str(row["condition_meddra_id"])
+        mechanism = f"Increased risk of {meddra_pt} (TWOSIDES PRR={row['PRR']})"
+        # (subject cid, other cid, other name) for both directions of the pair.
+        directions = (
+            (cid1, cid2, row["drug_2_concept_name"]),
+            (cid2, cid1, row["drug_1_concept_name"]),
+        )
+        for cid, other_cid, other_name in directions:
             by_cid.setdefault(cid, []).append(
                 {
-                    "interacting_cid": other,
+                    "interacting_cid": other_cid,
+                    "interacting_name": other_name,
                     "mechanism": mechanism,
                     "meddra_pt": meddra_pt,
+                    "meddra_code": meddra_code,
                     "source": "TWOSIDES",
-                    "source_id": f"{a}-{b}",
+                    "source_id": f"{rx1}-{rx2}",
                 }
             )
     logger.info("Parsed TWOSIDES: %d compounds", len(by_cid))

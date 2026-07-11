@@ -7,7 +7,11 @@ _SE_ROWS = (
     "CID100002244\tCID000002244\tC0018939\tPT\t10017955\tGastrointestinal haemorrhage\n"
 )
 _TWOSIDES_CSV = (
-    "drug_1_cid,drug_2_cid,condition_meddra_name,prr\n2244,5090,Nausea,3.1\n"
+    "drug_1_rxnorn_id,drug_1_concept_name,drug_2_rxnorm_id,drug_2_concept_name,"
+    "condition_meddra_id,condition_concept_name,A,B,C,D,PRR,PRR_error,"
+    "mean_reporting_frequency\n"
+    "10355,Temazepam,136411,sildenafil,10003239,Nausea,7,149,24,1536,"
+    "3.1,0.42,0.04\n"
 )
 _CHEMBL_CSV = (
     "molecule_chembl_id,mechanism_of_action,action_type\n"
@@ -30,11 +34,12 @@ def test_build_datasets_writes_three_files(tmp_path: Path):
             twosides=twosides,
             chembl_moa=chembl,
             unichem={"CHEMBL25": 2244},
+            rxnorm_to_cid={"10355": 5391, "136411": 135398744},
         ),
         out,
     )
 
     effects = json.loads((out / "sider_effects.json").read_text())
     assert "2244" in effects
-    assert json.loads((out / "twosides_ddi.json").read_text())["2244"]
+    assert json.loads((out / "twosides_ddi.json").read_text())["5391"]
     assert json.loads((out / "chembl_moa.json").read_text())["2244"]
