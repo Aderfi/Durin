@@ -103,7 +103,8 @@ class Provenance(DomainModel):
 name: NonEmptyStr                                 # existente
 meddra_pt: NonEmptyStr | None = None              # NUEVO: MedDRA Preferred Term
 meddra_code: MedDRACode | None = None             # NUEVO: MedDRA code
-severity: SeverityLevel                            # existente
+severity: SeverityLevel | None = None              # CAMBIO: ahora opcional (fuente no siempre lo da)
+severity_derived: bool = False                     # NUEVO: True si severity se dedujo (no vino de la fuente)
 frequency: FrequencyCategory | None = None         # existente
 provenance: Provenance                             # NUEVO: obligatorio
 ```
@@ -159,16 +160,19 @@ class AgencyAdapter(Protocol):
 - ⚠️ **SIDER no aporta `severity`.** Ver "Severidad" abajo.
 - Licencia **CC BY-NC-SA 4.0** (no comercial) — aceptada (Durin académico).
 
-### Severidad (decisión pendiente de tu confirmación)
+### Severidad (opcional + derivada)
 
-Ninguna fuente da un `severity` mild/moderate/severe limpio por efecto. Opción elegida
-para el spec (ajustable): **derivar `severity` de la seriedad MedDRA** — un efecto cuyo
-MedDRA PT pertenece a un *Important Medical Event* / *SMQ* serio, o marcado "serious" en
-FAERS, se etiqueta `severe`; el resto `moderate`; `mild` solo con señal explícita. La
-regla de derivación se registra como `Provenance(source="LLM_NORMALIZED")` **no** —es una
-regla determinista, no LLM— sino con `source` de la fuente y un marcador de que la
-severidad es derivada. Alternativa: hacer `severity` **opcional** en `SideEffect` y dejarlo
-`None` cuando la fuente no lo da. Requiere tu decisión (ver nota al final).
+Ninguna fuente da un `severity` mild/moderate/severe limpio por efecto. Política:
+
+- `SideEffect.severity` es **opcional** (`SeverityLevel | None`).
+- El ETL **deriva** severity de forma **determinista** (no LLM) cuando hay señal MedDRA: un
+  efecto cuyo MedDRA PT es *Important Medical Event* / pertenece a un *SMQ* serio, o marcado
+  "serious" en FAERS → `severe`; con señal contraria → `moderate`; sin señal alguna →
+  `None`.
+- Cuando el valor viene de esa derivación (no de la fuente directa), `severity_derived=True`.
+  Así el motor de riesgo distingue "grave según la fuente" de "grave inferido".
+- La derivación es una regla determinista: NO usa el `TermNormalizer`/LLM ni la marca
+  `source="LLM_NORMALIZED"`; `provenance.source` sigue siendo la fuente del efecto.
 
 **ChEMBL** — mecanismo de acción (Tier 1)
 - Tabla `mechanism_of_action` + `molecule_dictionary`. ID→CID vía **UniChem** (molregno →
@@ -191,8 +195,9 @@ Formato Tier 1 (ej. `sider_effects.json`, CID string como clave):
 {
   "2244": [
     {"name": "gastrointestinal haemorrhage", "meddra_pt": "Gastrointestinal haemorrhage",
-     "meddra_code": "10017955", "severity": "severe", "frequency": "rare",
-     "source": "SIDER", "source_id": "CID100002244", "retrieved": "2026-07-11"}
+     "meddra_code": "10017955", "severity": "severe", "severity_derived": true,
+     "frequency": "rare", "source": "SIDER", "source_id": "CID100002244",
+     "retrieved": "2026-07-11"}
   ]
 }
 ```
@@ -256,6 +261,8 @@ Config central en `src/utils/logging.py`, usada por todos los módulos:
 - `enrichment.enrich_drug(cid)` con fixtures Tier 1 (sin red) → ensambla `SideEffect` /
   `Interaction` con `provenance` correcto.
 - `Provenance` obligatorio: construir `SideEffect` sin `provenance` → `ValidationError`.
+- Severidad: `SideEffect` sin señal MedDRA → `severity=None`; con señal serio → `severity="severe"`,
+  `severity_derived=True`.
 - Contrato `AgencyAdapter`: `CimaAdapter` mockeado (respuesta HTTP fija) → `Product` válido.
 - `TermNormalizer`: `LocalLLMNormalizer.normalize` lanza `NotImplementedError` (placeholder).
 - Logging: un fallo de mapeo ID→CID emite un registro `warning` (capturado con `caplog`).
