@@ -66,12 +66,19 @@ def _unique_drugs(twosides_path: Path) -> dict[str, str]:
 
 
 def build_rxnorm_map(twosides_path: Path, out_path: Path) -> None:
-    """Resolve every TWOSIDES drug name to a CID and write an rxcui->cid TSV."""
+    """Resolve every TWOSIDES drug name to a CID and write an rxcui->cid TSV.
+
+    Many TWOSIDES entries are biologics, vaccines or mixtures with no PubChem
+    compound (a 404 is expected for those). To avoid flooding the log, each
+    unresolved name is logged at DEBUG and collected; a single summary is logged
+    at the end and the unresolved list is written to ``<out>.unresolved.tsv`` for
+    review. Genuine request failures (network/5xx) are still logged as errors.
+    """
     drugs = _unique_drugs(twosides_path)
     logger.info("Resolving %d unique RxNorm drugs to CIDs", len(drugs))
 
-    resolved = 0
     lines: list[str] = []
+    unresolved: list[str] = []
     for rxcui, name in drugs.items():
         try:
             cid = resolve_name_to_cid(name)
@@ -79,14 +86,24 @@ def build_rxnorm_map(twosides_path: Path, out_path: Path) -> None:
             logger.error("PubChem request failed for %r (rxcui %s)", name, rxcui)
             cid = None
         if cid is None:
-            logger.warning("Unresolved drug, skipping: %r (rxcui %s)", name, rxcui)
+            logger.debug("No PubChem CID for %r (rxcui %s)", name, rxcui)
+            unresolved.append(f"{rxcui}\t{name}")
         else:
             lines.append(f"{rxcui}\t{cid}")
-            resolved += 1
         time.sleep(_THROTTLE)
 
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    logger.info("Wrote %s (%d/%d resolved)", out_path, resolved, len(drugs))
+    if unresolved:
+        skipped_path = out_path.with_suffix(".unresolved.tsv")
+        skipped_path.write_text("\n".join(unresolved) + "\n", encoding="utf-8")
+        logger.warning(
+            "%d/%d drugs unresolved (biologics/vaccines/mixtures typically have "
+            "no compound CID); wrote list to %s",
+            len(unresolved),
+            len(drugs),
+            skipped_path,
+        )
+    logger.info("Wrote %s (%d/%d resolved)", out_path, len(lines), len(drugs))
 
 
 def main() -> None:
