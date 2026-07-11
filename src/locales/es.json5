@@ -6,6 +6,7 @@
   "validation.duplicate_active_principle": "Principios activos duplicados en la medicación",
   "validation.interaction_missing_drug": "Una interacción debe identificar al fármaco implicado",
   "validation.invalid_inchikey": "El InChIKey '{value}' no tiene formato válido",
+  "validation.invalid_meddra_code": "El código MedDRA '{value}' no es válido",
   "field.severity.mild": "leve",
   "field.severity.moderate": "moderada",
   "field.severity.severe": "grave"

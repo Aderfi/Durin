@@ -27,3 +27,12 @@ SeverityLevel = Literal["mild", "moderate", "severe"]
 
 InteractionType = Literal["PD", "PK"]
 InteractionSeverity = Literal["minor", "moderate", "major", "contraindicated"]
+
+# Provenance source names. LLM_NORMALIZED tags MedDRA codes derived by the
+# offline term-normalizer (never a clinical assertion, only a coding step).
+SourceName = Literal[
+    "SIDER", "ChEMBL", "TWOSIDES", "openFDA", "CIMA", "LLM_NORMALIZED"
+]
+
+# MedDRA numeric code (Preferred/Lower Level Term id), 5 to 8 digits.
+type MedDRACode = Annotated[str, Field(pattern=r"^\d{5,8}$")]

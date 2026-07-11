@@ -5,7 +5,11 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from src.data.schemas import ATCCode, Drug, Interaction, Med, SideEffect
+from src.data.schemas import ATCCode, Drug, Interaction, Med, Provenance, SideEffect
+
+
+def _prov() -> Provenance:
+    return Provenance(source="SIDER", source_id="CID100002244")
 
 
 def test_atccode_derived_groups():
@@ -28,22 +32,56 @@ def test_atccode_higher_level_has_no_deeper_groups():
 
 
 def test_sideeffect_description_optional():
-    se = SideEffect(name="rash", severity="mild")
+    se = SideEffect(name="rash", severity="mild", provenance=_prov())
     assert se.description is None
 
 
 def test_sideeffect_rejects_empty_name():
     with pytest.raises(ValidationError):
-        SideEffect(name="", severity="mild")
+        SideEffect(name="", severity="mild", provenance=_prov())
+
+
+def test_sideeffect_requires_provenance():
+    with pytest.raises(ValidationError):
+        SideEffect(name="nausea", severity="mild")  # no provenance
+
+
+def test_sideeffect_severity_optional_and_derived_flag():
+    se = SideEffect(name="nausea", provenance=_prov())
+    assert se.severity is None
+    assert se.severity_derived is False
+
+    se2 = SideEffect(
+        name="gi haemorrhage",
+        severity="severe",
+        severity_derived=True,
+        meddra_code="10017955",
+        provenance=_prov(),
+    )
+    assert se2.severity == "severe"
+    assert se2.severity_derived is True
+    assert se2.meddra_code == "10017955"
+
+
+def test_sideeffect_rejects_bad_meddra_code():
+    with pytest.raises(ValidationError):
+        SideEffect(name="nausea", meddra_code="ABC", provenance=_prov())
 
 
 def test_interaction_requires_drug_identity():
     with pytest.raises(ValidationError):
-        Interaction(mechanism="CYP3A4 inhibition")  # no drug -> invalid
+        Interaction(mechanism="CYP3A4 inhibition", provenance=_prov())  # no drug
+
+
+def test_interaction_requires_provenance():
+    with pytest.raises(ValidationError):
+        Interaction(interacting_drug="warfarin")  # no provenance
 
 
 def test_interaction_with_named_drug_ok():
-    inter = Interaction(interacting_drug="warfarina", management="vigilar INR")
+    inter = Interaction(
+        interacting_drug="warfarina", management="vigilar INR", provenance=_prov()
+    )
     assert inter.interacting_drug == "warfarina"
 
 

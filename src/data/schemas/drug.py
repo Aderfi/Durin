@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 from pydantic import Field, field_validator, model_validator
@@ -9,9 +10,11 @@ from src.data.schemas.types import (
     FrequencyCategory,
     InteractionSeverity,
     InteractionType,
+    MedDRACode,
     NonEmptyStr,
     PubChemCID,
     SeverityLevel,
+    SourceName,
 )
 from src.locales.loader import t
 
@@ -91,15 +94,47 @@ class ATCCode(DomainModel):
         return self.level == 5
 
 
+class Provenance(DomainModel):
+    """Traceability for a single clinical fact (side effect or interaction).
+
+    Every fact the risk engine consumes must name its source. `source_id` holds
+    the native identifier (STITCH id, ChEMBL molregno, openFDA set_id); for
+    ``source="LLM_NORMALIZED"`` it holds the original free text that was coded.
+    """
+
+    source: SourceName = Field(description="Where the datum comes from.")
+    source_id: str | None = Field(
+        default=None,
+        description="Native source id, or original text for LLM_NORMALIZED.",
+    )
+    retrieved: date | None = Field(
+        default=None, description="Extraction date (ETL run or Tier 2 cache write)."
+    )
+
+
 class SideEffect(DomainModel):
     name: NonEmptyStr = Field(description="Name of the adverse effect.")
     description: str | None = Field(
         default=None, description="Optional clinical description."
     )
-    severity: SeverityLevel = Field(description="Severity: mild | moderate | severe.")
+    meddra_pt: NonEmptyStr | None = Field(
+        default=None, description="MedDRA Preferred Term, if coded."
+    )
+    meddra_code: MedDRACode | None = Field(
+        default=None, description="MedDRA numeric code, if coded."
+    )
+    severity: SeverityLevel | None = Field(
+        default=None,
+        description="Severity: mild | moderate | severe. None if no source signal.",
+    )
+    severity_derived: bool = Field(
+        default=False,
+        description="True if severity was inferred (not stated by the source).",
+    )
     frequency: FrequencyCategory | None = Field(
         default=None, description="Population frequency of the effect, if known."
     )
+    provenance: Provenance = Field(description="Source of this fact (required).")
 
 
 class Interaction(DomainModel):
@@ -123,6 +158,7 @@ class Interaction(DomainModel):
     management: str | None = Field(
         default=None, description="Management, e.g. 'avoid combination'."
     )
+    provenance: Provenance = Field(description="Source of this fact (required).")
 
     @model_validator(mode="after")
     def require_drug_identity(self):
