@@ -8,6 +8,7 @@ and reference resolution.
 from collections.abc import Iterable
 from datetime import date
 
+from src.data.enrichment import PharmacovigilanceStore, enrich_drug
 from src.data.pubchem import fetch_compound, fetch_compounds
 from src.data.schemas.drug import ATCCode, Drug
 from src.data.schemas.medication import Med
@@ -39,6 +40,18 @@ def get_drug_by_cid(cid: int) -> Drug | None:
     """
     props = fetch_compound(cid)
     return _drug_from_props(props) if props else None
+
+
+def get_enriched_drug(cid: int, store: PharmacovigilanceStore) -> Drug | None:
+    """Resolve a Drug by CID and populate its side effects and interactions.
+
+    Returns None if the CID cannot be resolved via PubChem. Chemical identity
+    comes from PubChem; pharmacovigilance data comes from ``store``.
+    """
+    drug = get_drug_by_cid(cid)
+    if drug is None:
+        return None
+    return enrich_drug(drug, store)
 
 
 def resolve_active_principles(cids: Iterable[int]) -> list[Drug]:

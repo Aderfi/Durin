@@ -1,8 +1,13 @@
 import datetime as dt
+import json
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from src.data import pubchem, repository
+from src.data.enrichment import PharmacovigilanceStore
+from src.data.repository import get_enriched_drug
 from src.data.schemas import Drug, Med
 
 _AMOX_PROPS = {
@@ -85,3 +90,41 @@ def test_fetch_compound_404_returns_none(monkeypatch):
     monkeypatch.setattr(pubchem.requests, "get", lambda *a, **k: _Resp())
     pubchem.fetch_compound.cache_clear()
     assert pubchem.fetch_compound(1) is None
+
+
+def _empty_store(tmp_path: Path, effects: dict | None = None) -> PharmacovigilanceStore:
+    (tmp_path / "sider_effects.json").write_text(
+        json.dumps(effects or {}), encoding="utf-8"
+    )
+    (tmp_path / "twosides_ddi.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "chembl_moa.json").write_text("{}", encoding="utf-8")
+    return PharmacovigilanceStore(data_dir=tmp_path)
+
+
+def test_get_enriched_drug_populates_effects(tmp_path: Path):
+    store = _empty_store(
+        tmp_path,
+        {
+            "2244": [
+                {
+                    "name": "Nausea",
+                    "meddra_code": "10028813",
+                    "source": "SIDER",
+                    "source_id": "CID100002244",
+                }
+            ],
+        },
+    )
+    fake_props = {"CID": 2244, "Title": "aspirin", "MolecularFormula": "C9H8O4"}
+    with patch("src.data.repository.fetch_compound", return_value=fake_props):
+        drug = get_enriched_drug(2244, store)
+
+    assert drug is not None
+    assert drug.name == "aspirin"
+    assert drug.side_effects[0].name == "Nausea"
+
+
+def test_get_enriched_drug_unknown_cid_returns_none(tmp_path: Path):
+    store = _empty_store(tmp_path)
+    with patch("src.data.repository.fetch_compound", return_value=None):
+        assert get_enriched_drug(2244, store) is None
