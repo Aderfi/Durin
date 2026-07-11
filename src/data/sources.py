@@ -108,24 +108,33 @@ def parse_twosides(
     """Parse a TWOSIDES CSV into per-CID interaction dicts (indexed both ways).
 
     TWOSIDES identifies drugs by RxNorm id, so ``rxnorm_to_cid`` maps each RxNorm
-    id to a PubChem CID. A pair with either drug unmapped is logged and skipped.
-    Each row yields an entry under both CIDs of the pair, carrying the other
+    id to a PubChem CID. A pair with either drug unmapped is skipped; because
+    TWOSIDES has millions of rows, skips are logged at DEBUG and only a single
+    summary (kept + skipped counts + unmapped RxNorm ids) is logged at the end.
+    Each kept row yields an entry under both CIDs of the pair, carrying the other
     drug's name (``interacting_name``) and the condition's MedDRA id/term.
 
     Note the source header misspells the first column as ``drug_1_rxnorn_id``.
     """
     frame = pl.read_csv(path, infer_schema_length=0)  # read all as str; ids kept exact
     by_cid: dict[int, list[dict]] = {}
+    kept = 0
+    skipped = 0
+    unmapped: set[str] = set()
     for row in frame.iter_rows(named=True):
         rx1 = row["drug_1_rxnorn_id"]
         rx2 = row["drug_2_rxnorm_id"]
         cid1 = rxnorm_to_cid.get(rx1)
         cid2 = rxnorm_to_cid.get(rx2)
         if cid1 is None or cid2 is None:
-            logger.warning(
-                "No CID for RxNorm pair %s/%s, skipping interaction", rx1, rx2
-            )
+            skipped += 1
+            if cid1 is None:
+                unmapped.add(rx1)
+            if cid2 is None:
+                unmapped.add(rx2)
+            logger.debug("No CID for RxNorm pair %s/%s, skipping", rx1, rx2)
             continue
+        kept += 1
 
         meddra_pt = row["condition_concept_name"]
         meddra_code = str(row["condition_meddra_id"])
@@ -147,7 +156,18 @@ def parse_twosides(
                     "source_id": f"{rx1}-{rx2}",
                 }
             )
-    logger.info("Parsed TWOSIDES: %d compounds", len(by_cid))
+    if skipped:
+        logger.warning(
+            "TWOSIDES: skipped %d interactions (%d RxNorm ids not in the CID map)",
+            skipped,
+            len(unmapped),
+        )
+    logger.info(
+        "Parsed TWOSIDES: %d compounds, %d interactions kept, %d skipped",
+        len(by_cid),
+        kept,
+        skipped,
+    )
     return by_cid
 
 
