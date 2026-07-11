@@ -27,6 +27,10 @@ _OPENFDA_TIMEOUT = 15  # seconds
 # STITCH compound id, e.g. "CID100002244" (flat) or "CID000002244" (stereo).
 _STITCH_PATTERN = re.compile(r"^CID[01](\d+)$")
 
+# MedDRA codes flagged as Important Medical Events / serious SMQ membership.
+# Seeded minimally; extended by the ETL from the MedDRA IME list.
+_SERIOUS_MEDDRA_CODES: frozenset[str] = frozenset({"10017955"})
+
 # SIDER meddra_all_se.tsv column order (no header in the distributed file).
 _SIDER_SE_COLUMNS = [
     "stitch_flat",
@@ -45,6 +49,22 @@ def stitch_to_cid(stitch_id: str) -> int | None:
         logger.warning("Unmappable STITCH id, skipping: %r", stitch_id)
         return None
     return int(match.group(1))  # int() drops leading zeros
+
+
+def derive_severity(
+    meddra_code: str | None, is_serious: bool
+) -> tuple[str | None, bool]:
+    """Deterministically derive (severity, severity_derived) from MedDRA signal.
+
+    ``severe`` if flagged serious or the code is in the serious set; ``moderate``
+    if a code exists but is not serious; ``(None, False)`` if there is no signal.
+    This is a rule, not an LLM inference.
+    """
+    if is_serious or (meddra_code in _SERIOUS_MEDDRA_CODES):
+        return "severe", True
+    if meddra_code is not None:
+        return "moderate", True
+    return None, False
 
 
 def parse_sider(se_path: Path, freq_path: Path | None = None) -> dict[int, list[dict]]:

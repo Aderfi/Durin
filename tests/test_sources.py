@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 
 from src.data.sources import (
+    derive_severity,
     fetch_openfda_label,
     parse_chembl_moa,
     parse_sider,
@@ -114,3 +115,15 @@ def test_fetch_openfda_uses_cache(tmp_path):
     result = fetch_openfda_label(2244, "aspirin", cache_dir=cache)
     assert result["adverse_reactions"] == "GI bleeding."
     assert result["source_id"] == "cached"
+
+
+def test_derive_severity_serious_flag():
+    assert derive_severity("10017955", is_serious=True) == ("severe", True)
+
+
+def test_derive_severity_coded_not_serious():
+    assert derive_severity("10028813", is_serious=False) == ("moderate", True)
+
+
+def test_derive_severity_no_signal():
+    assert derive_severity(None, is_serious=False) == (None, False)
