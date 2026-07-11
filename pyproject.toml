@@ -31,6 +31,10 @@ notebook = [
     "jupyter>=1.1.1",
 ]
 
+[tool.pytest.ini_options]
+# Put the repo root on sys.path so tests can `import src...` without env vars.
+pythonpath = ["."]
+
 [tool.ruff]
 # target-version intentionally omitted: inferred from requires-python (>=3.14),
 # so lint/format re-targets automatically when the project's Python bumps.
