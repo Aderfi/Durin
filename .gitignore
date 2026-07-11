@@ -10,6 +10,8 @@ models/*.h5
 *.log
 .ipynb_checkpoints/
 
+graphify-out/
+
 # ATC scraper artifacts (progress state + duplicate of src/data/atc/codes.json)
 scripts/checkpoint.json
 scripts/codes.json

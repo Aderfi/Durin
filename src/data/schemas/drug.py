@@ -15,7 +15,7 @@ from src.data.schemas.types import (
 )
 from src.locales.loader import t
 
-_ATC_DATA_PATH = Path(__file__).parent.parent / "atc" / "codes.json"
+_ATC_DATA_PATH = Path(__file__).parent.parent / "atc" / "atc_codes.json"
 _ATC_LOOKUP: dict[str, str] = json.loads(_ATC_DATA_PATH.read_text())
 
 _ATC_PATTERN = re.compile(r"^[A-Z](\d{2}([A-Z]([A-Z](\d{2})?)?)?)?$")
