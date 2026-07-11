@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from src.data.sources import parse_sider, stitch_to_cid
+from src.data.sources import parse_sider, parse_twosides, stitch_to_cid
 
 
 def test_stitch_to_cid_flat():
@@ -42,3 +42,22 @@ def test_parse_sider_groups_by_cid(tmp_path):
     assert first["name"] == "Gastrointestinal haemorrhage"
     assert first["source"] == "SIDER"
     assert first["source_id"] == "CID100002244"
+
+
+# Minimal TWOSIDES CSV: drug_1 CID, drug_2 CID, condition MedDRA name, PRR.
+_TWOSIDES_CSV = (
+    "drug_1_cid,drug_2_cid,condition_meddra_name,prr\n"
+    "2244,5090,Gastrointestinal haemorrhage,4.2\n"
+)
+
+
+def test_parse_twosides_symmetric(tmp_path):
+    p = tmp_path / "twosides.csv"
+    p.write_text(_TWOSIDES_CSV, encoding="utf-8")
+    result = parse_twosides(p)
+    # Interaction indexed under both members of the pair.
+    assert 2244 in result and 5090 in result
+    entry = result[2244][0]
+    assert entry["interacting_cid"] == 5090
+    assert entry["meddra_pt"] == "Gastrointestinal haemorrhage"
+    assert entry["source"] == "TWOSIDES"

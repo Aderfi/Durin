@@ -69,3 +69,29 @@ def parse_sider(se_path: Path, freq_path: Path | None = None) -> dict[int, list[
         sum(len(v) for v in by_cid.values()),
     )
     return by_cid
+
+
+def parse_twosides(path: Path) -> dict[int, list[dict]]:
+    """Parse a TWOSIDES CSV into per-CID interaction dicts (indexed both ways).
+
+    Each drug-drug row yields an entry under both CIDs of the pair so a lookup by
+    either compound finds the interaction.
+    """
+    frame = pl.read_csv(path)
+    by_cid: dict[int, list[dict]] = {}
+    for row in frame.iter_rows(named=True):
+        a, b = int(row["drug_1_cid"]), int(row["drug_2_cid"])
+        meddra_pt = row["condition_meddra_name"]
+        mechanism = f"Increased risk of {meddra_pt} (TWOSIDES PRR={row['prr']})"
+        for cid, other in ((a, b), (b, a)):
+            by_cid.setdefault(cid, []).append(
+                {
+                    "interacting_cid": other,
+                    "mechanism": mechanism,
+                    "meddra_pt": meddra_pt,
+                    "source": "TWOSIDES",
+                    "source_id": f"{a}-{b}",
+                }
+            )
+    logger.info("Parsed TWOSIDES: %d compounds", len(by_cid))
+    return by_cid
