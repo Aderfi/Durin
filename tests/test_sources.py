@@ -5,9 +5,9 @@ from pathlib import Path
 from src.data.sources import (
     derive_severity,
     fetch_openfda_label,
+    iter_twosides_rows,
     parse_chembl_moa,
     parse_sider,
-    parse_twosides,
     stitch_to_cid,
 )
 
@@ -65,27 +65,27 @@ _TWOSIDES_CSV = (
 _RXNORM_TO_CID = {"10355": 5391, "136411": 135398744}
 
 
-def test_parse_twosides_symmetric(tmp_path):
+def test_iter_twosides_rows_symmetric(tmp_path):
     p = tmp_path / "twosides.csv"
     p.write_text(_TWOSIDES_CSV, encoding="utf-8")
-    result = parse_twosides(p, rxnorm_to_cid=_RXNORM_TO_CID)
-    # Interaction indexed under both members of the pair.
-    assert 5391 in result and 135398744 in result
-    entry = result[5391][0]
+    rows = list(iter_twosides_rows(p, _RXNORM_TO_CID))
+    # Interaction emitted under both members of the pair.
+    by_cid = {r["cid"]: r for r in rows}
+    assert set(by_cid) == {5391, 135398744}
+    entry = by_cid[5391]
     assert entry["interacting_cid"] == 135398744
     assert entry["interacting_name"] == "sildenafil"
     assert entry["meddra_pt"] == "Arthralgia"
     assert entry["meddra_code"] == "10003239"
     assert entry["source"] == "TWOSIDES"
+    assert "PRR=2.91667" in entry["mechanism"]
 
 
-def test_parse_twosides_skips_unmapped_rxnorm(tmp_path, caplog):
+def test_iter_twosides_rows_drops_unmapped(tmp_path):
     p = tmp_path / "twosides.csv"
     p.write_text(_TWOSIDES_CSV, encoding="utf-8")
-    with caplog.at_level(logging.WARNING):
-        result = parse_twosides(p, rxnorm_to_cid={"10355": 5391})  # 136411 unmapped
-    assert result == {}
-    assert any("RxNorm" in r.message for r in caplog.records)
+    rows = list(iter_twosides_rows(p, {"10355": 5391}))  # 136411 unmapped
+    assert rows == []
 
 
 # Minimal ChEMBL mechanism CSV: molecule_chembl_id, mechanism_of_action, action_type.

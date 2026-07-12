@@ -29,7 +29,12 @@ sys.path.insert(
     0, str(ROOT)
 )  # para poder importar src.data.sources y src.utils.logging
 
-from src.data.sources import parse_chembl_moa, parse_sider, parse_twosides  # noqa: E402
+from src.data.pharmacovigilance import db  # noqa: E402
+from src.data.sources import (  # noqa: E402
+    iter_twosides_rows,
+    parse_chembl_moa,
+    parse_sider,
+)
 from src.utils.logging import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
@@ -62,11 +67,7 @@ def _load_tsv_map(path: Path) -> dict[str, int]:
     return mapping
 
 
-def _write(out_dir: Path, name: str, data: dict) -> None:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / name
-    path.write_text(json.dumps(data), encoding="utf-8")
-    logger.info("Wrote %s (%d compounds)", path, len(data))
+_TWOSIDES_COMMIT_EVERY = 500_000  # rows inserted per SQLite transaction
 
 
 def build_meddra_vocab(sider_by_cid: dict[int, list[dict]]) -> dict[str, str]:
@@ -119,50 +120,70 @@ def normalize_openfda_effects(
     return out
 
 
-def build_datasets(
+def _stream_twosides_into_db(
+    conn, twosides_path: Path, rxnorm_to_cid: dict[str, int]
+) -> None:
+    """Stream TWOSIDES rows into the DB in bounded batches (never all in RAM)."""
+    batch: list[dict] = []
+    total = 0
+    for row in iter_twosides_rows(twosides_path, rxnorm_to_cid):
+        batch.append(row)
+        if len(batch) >= _TWOSIDES_COMMIT_EVERY:
+            db.insert_rows(conn, "twosides_ddi", batch)
+            conn.commit()
+            total += len(batch)
+            batch = []
+    if batch:
+        db.insert_rows(conn, "twosides_ddi", batch)
+        conn.commit()
+        total += len(batch)
+    logger.info("Inserted %d TWOSIDES interaction rows", total)
+
+
+def build_database(
     inputs: BuildInputs,
-    out_dir: Path,
+    db_path: Path,
     reactions_by_cid: dict[int, list[str]] | None = None,
 ) -> None:
-    """Parse all sources and write the per-CID JSON datasets.
+    """Build the unified pharmacovigilance SQLite DB from all sources.
 
-    Always writes the three Tier 1 datasets. When ``reactions_by_cid`` is given,
-    it also builds the local LLM normalizer over the SIDER MedDRA vocabulary and
-    writes ``openfda_effects.json`` (Tier 2 text coded offline).
+    Writes the four dataset tables keyed by CID. SIDER and ChEMBL are small and
+    inserted whole; TWOSIDES is streamed in batches so it never loads into RAM.
+    When ``reactions_by_cid`` is given, the local LLM normalizer codes the openFDA
+    free text over the SIDER MedDRA vocabulary into ``openfda_effects`` (Tier 2).
     """
-    sider_by_cid = parse_sider(inputs.sider_se)
-    _write(out_dir, "sider_effects.json", {str(k): v for k, v in sider_by_cid.items()})
-    _write(
-        out_dir,
-        "twosides_ddi.json",
-        {
-            str(k): v
-            for k, v in parse_twosides(inputs.twosides, inputs.rxnorm_to_cid).items()
-        },
-    )
-    _write(
-        out_dir,
-        "chembl_moa.json",
-        {
-            str(k): v
-            for k, v in parse_chembl_moa(inputs.chembl_moa, inputs.unichem).items()
-        },
-    )
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = db.connect(db_path)
+    try:
+        db.create_schema(conn)
 
-    if reactions_by_cid:
-        # Imported here so the Tier 1 build never pulls the heavy embedding stack.
-        from src.data.pharmacovigilance.normalizer import (
-            LocalLLMNormalizer,
-            SapBERTCandidateGenerator,
+        sider_by_cid = parse_sider(inputs.sider_se)
+        db.insert_by_cid(conn, "sider_effects", sider_by_cid)
+        db.insert_by_cid(
+            conn, "chembl_moa", parse_chembl_moa(inputs.chembl_moa, inputs.unichem)
         )
+        conn.commit()
 
-        vocab = build_meddra_vocab(sider_by_cid)
-        normalizer = LocalLLMNormalizer(SapBERTCandidateGenerator(vocab))
-        _write(
-            out_dir,
-            "openfda_effects.json",
-            normalize_openfda_effects(reactions_by_cid, normalizer),
-        )
+        _stream_twosides_into_db(conn, inputs.twosides, inputs.rxnorm_to_cid)
+
+        if reactions_by_cid:
+            # Imported here so a Tier 1 build never pulls the heavy embedding stack.
+            from src.data.pharmacovigilance.normalizer import (
+                LocalLLMNormalizer,
+                SapBERTCandidateGenerator,
+            )
+
+            vocab = build_meddra_vocab(sider_by_cid)
+            normalizer = LocalLLMNormalizer(SapBERTCandidateGenerator(vocab))
+            db.insert_by_cid(
+                conn,
+                "openfda_effects",
+                normalize_openfda_effects(reactions_by_cid, normalizer),
+            )
+            conn.commit()
+        logger.info("Built pharmacovigilance DB: %s", db_path)
+    finally:
+        conn.close()
 
 
 def main() -> None:
@@ -189,9 +210,14 @@ def main() -> None:
         type=Path,
         default=None,
         help="Optional JSON mapping CID -> list of free-text reaction phrases; "
-        "when given, they are coded to MedDRA offline into openfda_effects.json.",
+        "when given, they are coded to MedDRA offline into the openfda_effects table.",
     )
-    parser.add_argument("--out", type=Path, default=Path("src/data/pharmacovigilance"))
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("src/data/pharmacovigilance/pharmacovigilance.db"),
+        help="Output SQLite database path.",
+    )
     args = parser.parse_args()
     unichem = _load_tsv_map(args.unichem)
     rxnorm_to_cid = _load_tsv_map(args.rxnorm)
@@ -201,7 +227,7 @@ def main() -> None:
         raw = json.loads(args.openfda_reactions.read_text(encoding="utf-8"))
         reactions_by_cid = {int(cid): phrases for cid, phrases in raw.items()}
 
-    build_datasets(
+    build_database(
         BuildInputs(
             args.sider_se, args.twosides, args.chembl_moa, unichem, rxnorm_to_cid
         ),
@@ -214,9 +240,10 @@ if __name__ == "__main__":
     main()
 
 # Example:
-#   python scripts/build_pharmacovigilance.py \
+#   python -m scripts.build_pharmacovigilance \
 #     --sider-se tmp/meddra_all_se.tsv \
 #     --twosides tmp/TWOSIDES.csv \
 #     --chembl-moa tmp/chembl_moa.csv \
 #     --unichem tmp/src1src22.txt \
-#     --rxnorm tmp/rxnorm_to_cid.tsv
+#     --rxnorm tmp/rxnorm_to_cid.tsv \
+#     --out src/data/pharmacovigilance/pharmacovigilance.db

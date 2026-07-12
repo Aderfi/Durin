@@ -1,5 +1,4 @@
 import datetime as dt
-import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -7,6 +6,7 @@ import pytest
 
 from src.data import pubchem, repository
 from src.data.enrichment import PharmacovigilanceStore
+from src.data.pharmacovigilance import db
 from src.data.repository import get_enriched_drug
 from src.data.schemas import Drug, Med
 
@@ -93,12 +93,8 @@ def test_fetch_compound_404_returns_none(monkeypatch):
 
 
 def _empty_store(tmp_path: Path, effects: dict | None = None) -> PharmacovigilanceStore:
-    (tmp_path / "sider_effects.json").write_text(
-        json.dumps(effects or {}), encoding="utf-8"
-    )
-    (tmp_path / "twosides_ddi.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "chembl_moa.json").write_text("{}", encoding="utf-8")
-    return PharmacovigilanceStore(data_dir=tmp_path)
+    db_path = db.build_db(tmp_path / "pv.db", sider=effects)
+    return PharmacovigilanceStore(db_path)
 
 
 def test_get_enriched_drug_populates_effects(tmp_path: Path):

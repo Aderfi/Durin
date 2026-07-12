@@ -1,46 +1,40 @@
-import json
 from pathlib import Path
 
 from src.data.enrichment import PharmacovigilanceStore, enrich_drug
+from src.data.pharmacovigilance import db
 from src.data.schemas import Drug
 
 
 def _store(tmp_path: Path) -> PharmacovigilanceStore:
-    (tmp_path / "sider_effects.json").write_text(
-        json.dumps(
-            {
-                "2244": [
-                    {
-                        "name": "Gastrointestinal haemorrhage",
-                        "meddra_pt": "Gastrointestinal haemorrhage",
-                        "meddra_code": "10017955",
-                        "frequency": "rare",
-                        "source": "SIDER",
-                        "source_id": "CID100002244",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
+    db_path = db.build_db(
+        tmp_path / "pv.db",
+        sider={
+            "2244": [
+                {
+                    "name": "Gastrointestinal haemorrhage",
+                    "meddra_pt": "Gastrointestinal haemorrhage",
+                    "meddra_code": "10017955",
+                    "frequency": "rare",
+                    "source": "SIDER",
+                    "source_id": "CID100002244",
+                }
+            ],
+        },
+        twosides={
+            "2244": [
+                {
+                    "interacting_cid": 5090,
+                    "interacting_name": None,
+                    "mechanism": "Increased risk of bleeding",
+                    "meddra_pt": "Gastrointestinal haemorrhage",
+                    "meddra_code": None,
+                    "source": "TWOSIDES",
+                    "source_id": "2244-5090",
+                }
+            ],
+        },
     )
-    (tmp_path / "twosides_ddi.json").write_text(
-        json.dumps(
-            {
-                "2244": [
-                    {
-                        "interacting_cid": 5090,
-                        "mechanism": "Increased risk of bleeding",
-                        "meddra_pt": "Gastrointestinal haemorrhage",
-                        "source": "TWOSIDES",
-                        "source_id": "2244-5090",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    (tmp_path / "chembl_moa.json").write_text(json.dumps({}), encoding="utf-8")
-    return PharmacovigilanceStore(data_dir=tmp_path)
+    return PharmacovigilanceStore(db_path)
 
 
 def test_side_effects_assembled_with_provenance(tmp_path):
@@ -80,41 +74,34 @@ def test_unknown_cid_returns_empty(tmp_path):
 
 
 def test_side_effects_merges_openfda(tmp_path):
-    (tmp_path / "sider_effects.json").write_text(
-        json.dumps(
-            {
-                "2244": [
-                    {
-                        "name": "Gastrointestinal haemorrhage",
-                        "meddra_pt": "Gastrointestinal haemorrhage",
-                        "meddra_code": "10017955",
-                        "frequency": None,
-                        "source": "SIDER",
-                        "source_id": "CID100002244",
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
+    db_path = db.build_db(
+        tmp_path / "pv.db",
+        sider={
+            "2244": [
+                {
+                    "name": "Gastrointestinal haemorrhage",
+                    "meddra_pt": "Gastrointestinal haemorrhage",
+                    "meddra_code": "10017955",
+                    "frequency": None,
+                    "source": "SIDER",
+                    "source_id": "CID100002244",
+                }
+            ]
+        },
+        openfda={
+            "2244": [
+                {
+                    "name": "nausea",
+                    "meddra_pt": "Nausea",
+                    "meddra_code": "10028813",
+                    "frequency": None,
+                    "source": "LLM_NORMALIZED",
+                    "source_id": "nausea",
+                }
+            ]
+        },
     )
-    (tmp_path / "openfda_effects.json").write_text(
-        json.dumps(
-            {
-                "2244": [
-                    {
-                        "name": "nausea",
-                        "meddra_pt": "Nausea",
-                        "meddra_code": "10028813",
-                        "frequency": None,
-                        "source": "LLM_NORMALIZED",
-                        "source_id": "nausea",
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    store = PharmacovigilanceStore(data_dir=tmp_path)
+    store = PharmacovigilanceStore(db_path)
     effects = store.side_effects(2244)
     assert {e.provenance.source for e in effects} == {"SIDER", "LLM_NORMALIZED"}
     llm = next(e for e in effects if e.provenance.source == "LLM_NORMALIZED")

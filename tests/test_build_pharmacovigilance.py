@@ -1,7 +1,7 @@
-import json
 from pathlib import Path
 
-from scripts.build_pharmacovigilance import BuildInputs, build_datasets
+from scripts.build_pharmacovigilance import BuildInputs, build_database
+from src.data.pharmacovigilance import db as pvdb
 
 _SE_ROWS = (
     "CID100002244\tCID000002244\tC0018939\tPT\t10017955\tGastrointestinal haemorrhage\n"
@@ -19,16 +19,22 @@ _CHEMBL_CSV = (
 )
 
 
-def test_build_datasets_writes_three_files(tmp_path: Path):
+def _count(conn, table: str, cid: int) -> int:
+    return conn.execute(
+        f"SELECT COUNT(*) FROM {table} WHERE cid = ?", (cid,)
+    ).fetchone()[0]
+
+
+def test_build_database_populates_all_tables(tmp_path: Path):
     sider = tmp_path / "se.tsv"
     sider.write_text(_SE_ROWS, encoding="utf-8")
     twosides = tmp_path / "two.csv"
     twosides.write_text(_TWOSIDES_CSV, encoding="utf-8")
     chembl = tmp_path / "chembl.csv"
     chembl.write_text(_CHEMBL_CSV, encoding="utf-8")
-    out = tmp_path / "out"
+    db_path = tmp_path / "pv.db"
 
-    build_datasets(
+    build_database(
         BuildInputs(
             sider_se=sider,
             twosides=twosides,
@@ -36,13 +42,15 @@ def test_build_datasets_writes_three_files(tmp_path: Path):
             unichem={"CHEMBL25": 2244},
             rxnorm_to_cid={"10355": 5391, "136411": 135398744},
         ),
-        out,
+        db_path,
     )
 
-    effects = json.loads((out / "sider_effects.json").read_text())
-    assert "2244" in effects
-    assert json.loads((out / "twosides_ddi.json").read_text())["5391"]
-    assert json.loads((out / "chembl_moa.json").read_text())["2244"]
+    conn = pvdb.connect(db_path)
+    assert _count(conn, "sider_effects", 2244) == 1
+    # TWOSIDES row is emitted under both members of the pair.
+    assert _count(conn, "twosides_ddi", 5391) == 1
+    assert _count(conn, "twosides_ddi", 135398744) == 1
+    assert _count(conn, "chembl_moa", 2244) == 1
 
 
 def test_build_meddra_vocab_dedupes():

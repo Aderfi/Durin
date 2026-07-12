@@ -6,6 +6,7 @@ Every mapping failure is logged — never swallowed.
 
 import json
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 import polars as pl
@@ -127,73 +128,89 @@ def parse_sider(se_path: Path, freq_path: Path | None = None) -> dict[int, list[
     return by_cid
 
 
-def parse_twosides(
-    path: Path, rxnorm_to_cid: dict[str, int]
-) -> dict[int, list[dict]]:
-    """Parse a TWOSIDES CSV into per-CID interaction dicts (indexed both ways).
+_TWOSIDES_BATCH = 200_000
 
-    TWOSIDES identifies drugs by RxNorm id, so ``rxnorm_to_cid`` maps each RxNorm
-    id to a PubChem CID. A pair with either drug unmapped is skipped; because
-    TWOSIDES has millions of rows, skips are logged at DEBUG and only a single
-    summary (kept + skipped counts + unmapped RxNorm ids) is logged at the end.
-    Each kept row yields an entry under both CIDs of the pair, carrying the other
-    drug's name (``interacting_name``) and the condition's MedDRA id/term.
+
+def _twosides_map_frame(rxnorm_to_cid: dict[str, int]) -> pl.DataFrame:
+    """RxNorm-id -> CID lookup as a Polars frame for vectorized joins."""
+    return pl.DataFrame(
+        {"rx": list(rxnorm_to_cid.keys()), "cid": list(rxnorm_to_cid.values())},
+        schema={"rx": pl.Utf8, "cid": pl.Int64},
+    )
+
+
+def _direction(
+    joined: pl.DataFrame, subject: str, other: str, name: str
+) -> pl.DataFrame:
+    """One direction of the pair: subject CID + interacting CID/name + condition."""
+    return joined.select(
+        cid=pl.col(subject),
+        interacting_cid=pl.col(other),
+        interacting_name=pl.col(name),
+        mechanism=pl.col("mechanism"),
+        meddra_pt=pl.col("condition_concept_name"),
+        meddra_code=pl.col("condition_meddra_id"),
+        source=pl.lit("TWOSIDES"),
+        source_id=pl.col("source_id"),
+    )
+
+
+def _transform_twosides_batch(df: pl.DataFrame, map_df: pl.DataFrame) -> list[dict]:
+    """Vectorized transform of one CSV batch into interaction row dicts.
+
+    Inner-joins both drug RxNorm ids to CIDs (pairs with either drug unmapped are
+    dropped), then emits a row under both CIDs of the pair.
+    """
+    joined = df.join(
+        map_df.rename({"rx": "drug_1_rxnorn_id", "cid": "cid1"}),
+        on="drug_1_rxnorn_id",
+        how="inner",
+    ).join(
+        map_df.rename({"rx": "drug_2_rxnorm_id", "cid": "cid2"}),
+        on="drug_2_rxnorm_id",
+        how="inner",
+    )
+    if joined.is_empty():
+        return []
+    joined = joined.with_columns(
+        (
+            pl.lit("Increased risk of ")
+            + pl.col("condition_concept_name")
+            + pl.lit(" (TWOSIDES PRR=")
+            + pl.col("PRR")
+            + pl.lit(")")
+        ).alias("mechanism"),
+        (pl.col("drug_1_rxnorn_id") + pl.lit("-") + pl.col("drug_2_rxnorm_id")).alias(
+            "source_id"
+        ),
+    )
+    forward = _direction(joined, "cid1", "cid2", "drug_2_concept_name")
+    backward = _direction(joined, "cid2", "cid1", "drug_1_concept_name")
+    return pl.concat([forward, backward]).to_dicts()
+
+
+def iter_twosides_rows(
+    path: Path, rxnorm_to_cid: dict[str, int], batch_size: int = _TWOSIDES_BATCH
+) -> Iterator[dict]:
+    """Stream TWOSIDES interaction rows (indexed both ways), bounded in memory.
+
+    TWOSIDES has tens of millions of rows, so it is read in Polars batches and
+    transformed vectorized per batch -- never the whole file (nor the whole
+    output) in RAM at once. Each yielded dict matches the ``twosides_ddi`` table.
+    Pairs whose RxNorm ids are not in ``rxnorm_to_cid`` are dropped by the join.
 
     Note the source header misspells the first column as ``drug_1_rxnorn_id``.
     """
-    frame = pl.read_csv(path, infer_schema_length=0)  # read all as str; ids kept exact
-    by_cid: dict[int, list[dict]] = {}
-    kept = 0
-    skipped = 0
-    unmapped: set[str] = set()
-    for row in frame.iter_rows(named=True):
-        rx1 = row["drug_1_rxnorn_id"]
-        rx2 = row["drug_2_rxnorm_id"]
-        cid1 = rxnorm_to_cid.get(rx1)
-        cid2 = rxnorm_to_cid.get(rx2)
-        if cid1 is None or cid2 is None:
-            skipped += 1
-            if cid1 is None:
-                unmapped.add(rx1)
-            if cid2 is None:
-                unmapped.add(rx2)
-            logger.debug("No CID for RxNorm pair %s/%s, skipping", rx1, rx2)
-            continue
-        kept += 1
-
-        meddra_pt = row["condition_concept_name"]
-        meddra_code = str(row["condition_meddra_id"])
-        mechanism = f"Increased risk of {meddra_pt} (TWOSIDES PRR={row['PRR']})"
-        # (subject cid, other cid, other name) for both directions of the pair.
-        directions = (
-            (cid1, cid2, row["drug_2_concept_name"]),
-            (cid2, cid1, row["drug_1_concept_name"]),
-        )
-        for cid, other_cid, other_name in directions:
-            by_cid.setdefault(cid, []).append(
-                {
-                    "interacting_cid": other_cid,
-                    "interacting_name": other_name,
-                    "mechanism": mechanism,
-                    "meddra_pt": meddra_pt,
-                    "meddra_code": meddra_code,
-                    "source": "TWOSIDES",
-                    "source_id": f"{rx1}-{rx2}",
-                }
-            )
-    if skipped:
-        logger.warning(
-            "TWOSIDES: skipped %d interactions (%d RxNorm ids not in the CID map)",
-            skipped,
-            len(unmapped),
-        )
-    logger.info(
-        "Parsed TWOSIDES: %d compounds, %d interactions kept, %d skipped",
-        len(by_cid),
-        kept,
-        skipped,
+    map_df = _twosides_map_frame(rxnorm_to_cid)
+    batches = pl.scan_csv(path, infer_schema_length=0).collect_batches(
+        chunk_size=batch_size
     )
-    return by_cid
+    total = 0
+    for df in batches:
+        rows = _transform_twosides_batch(df, map_df)
+        total += len(rows)
+        yield from rows
+    logger.info("Streamed TWOSIDES: %d interaction rows", total)
 
 
 def parse_chembl_moa(path: Path, unichem: dict[str, int]) -> dict[int, list[dict]]:
