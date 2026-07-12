@@ -18,4 +18,12 @@ scripts/codes.json
 
 # Runtime logs and Tier 2 pharmacovigilance cache
 logs/
+log.txt
 src/data/pharmacovigilance/_cache/
+
+# One-off ETL source downloads
+tmp/
+
+# Generated pharmacovigilance datasets (built offline by build_pharmacovigilance.py)
+src/data/pharmacovigilance/*.db
+src/data/pharmacovigilance/*.json
