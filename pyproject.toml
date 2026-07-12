@@ -10,6 +10,7 @@ dependencies = [
     "json5>=0.15.0",
     "jupyter>=1.1.1",
     "lab>=8.10",
+    "openai>=2.45.0",
     "polars>=1.42.1",
     "pubchempy>=1.0.5",
     "pydantic>=2.13.4",
@@ -26,6 +27,7 @@ dev = [
 extras = [
     "lxml>=6.1.1",
     "playwright>=1.61.0",
+    "sentence-transformers>=3.3.0",
 ]
 notebook = [
     "jupyter>=1.1.1",
