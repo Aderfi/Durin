@@ -28,30 +28,37 @@ class PharmacovigilanceStore:
 
     def __init__(self, data_dir: Path, cache_dir: Path | None = None) -> None:
         self._effects = _load(data_dir / "sider_effects.json")
+        self._openfda = _load(data_dir / "openfda_effects.json")
         self._interactions = _load(data_dir / "twosides_ddi.json")
         self._moa = _load(data_dir / "chembl_moa.json")
         self._cache_dir = cache_dir
 
+    @staticmethod
+    def _assemble_effect(raw: dict) -> SideEffect:
+        """Assemble one validated SideEffect with derived severity + provenance."""
+        code = raw.get("meddra_code")
+        severity, derived = derive_severity(code, is_serious=False)
+        return SideEffect(
+            name=raw["name"],
+            meddra_pt=raw.get("meddra_pt"),
+            meddra_code=code,
+            severity=severity,
+            severity_derived=derived,
+            frequency=raw.get("frequency"),
+            provenance=Provenance(
+                source=raw["source"], source_id=raw.get("source_id")
+            ),
+        )
+
     def side_effects(self, cid: int) -> list[SideEffect]:
-        """Return assembled SideEffect models for a CID (empty if unknown)."""
-        out: list[SideEffect] = []
-        for raw in self._effects.get(str(cid), []):
-            code = raw.get("meddra_code")
-            severity, derived = derive_severity(code, is_serious=False)
-            out.append(
-                SideEffect(
-                    name=raw["name"],
-                    meddra_pt=raw.get("meddra_pt"),
-                    meddra_code=code,
-                    severity=severity,
-                    severity_derived=derived,
-                    frequency=raw.get("frequency"),
-                    provenance=Provenance(
-                        source=raw["source"], source_id=raw.get("source_id")
-                    ),
-                )
-            )
-        return out
+        """Return assembled SideEffect models for a CID (empty if unknown).
+
+        Merges Tier 1 SIDER effects with offline-coded openFDA effects
+        (``source="LLM_NORMALIZED"``); runtime reads the pre-built JSON only.
+        """
+        key = str(cid)
+        rows = self._effects.get(key, []) + self._openfda.get(key, [])
+        return [self._assemble_effect(raw) for raw in rows]
 
     def interactions(self, cid: int) -> list[Interaction]:
         """Return assembled Interaction models for a CID (empty if unknown)."""

@@ -27,6 +27,9 @@ _OPENFDA_TIMEOUT = 15  # seconds
 # STITCH compound id, e.g. "CID100002244" (flat) or "CID000002244" (stereo).
 _STITCH_PATTERN = re.compile(r"^CID[01](\d+)$")
 
+# Clause delimiters used to segment an openFDA adverse_reactions blob.
+_REACTION_SPLIT = re.compile(r"[\n;,.]+")
+
 # MedDRA codes flagged as Important Medical Events / serious SMQ membership.
 # Seeded minimally; extended by the ETL from the MedDRA IME list.
 _SERIOUS_MEDDRA_CODES: frozenset[str] = frozenset({"10017955"})
@@ -65,6 +68,28 @@ def derive_severity(
     if meddra_code is not None:
         return "moderate", True
     return None, False
+
+
+def split_adverse_reactions(text: str | None, max_len: int = 80) -> list[str]:
+    """Segment an openFDA ``adverse_reactions`` blob into candidate phrases.
+
+    Best-effort deterministic segmentation on newlines and clause delimiters for
+    the term normalizer to code -- this is NOT clinical NER. Blank, overlong, or
+    case-insensitively duplicate fragments are dropped; the precision-first
+    normalizer discards any remaining fragment that is not a real MedDRA term.
+    """
+    if not text:
+        return []
+    seen: set[str] = set()
+    phrases: list[str] = []
+    for chunk in _REACTION_SPLIT.split(text):
+        phrase = chunk.strip()
+        key = phrase.lower()
+        if not phrase or len(phrase) > max_len or key in seen:
+            continue
+        seen.add(key)
+        phrases.append(phrase)
+    return phrases
 
 
 def parse_sider(se_path: Path, freq_path: Path | None = None) -> dict[int, list[dict]]:

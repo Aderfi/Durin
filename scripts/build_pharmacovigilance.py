@@ -12,11 +12,17 @@ Source downloads:
   UniChem map  : https://www.ebi.ac.uk/unichem/  (ChEMBL id -> PubChem CID)
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.data.pharmacovigilance.normalizer import TermNormalizer
 
 ROOT = Path.cwd().parent  # el notebook vive en notebooks/ -> raíz del repo
 sys.path.insert(
@@ -63,13 +69,69 @@ def _write(out_dir: Path, name: str, data: dict) -> None:
     logger.info("Wrote %s (%d compounds)", path, len(data))
 
 
-def build_datasets(inputs: BuildInputs, out_dir: Path) -> None:
-    """Parse all sources and write the three per-CID JSON datasets."""
-    _write(
-        out_dir,
-        "sider_effects.json",
-        {str(k): v for k, v in parse_sider(inputs.sider_se).items()},
-    )
+def build_meddra_vocab(sider_by_cid: dict[int, list[dict]]) -> dict[str, str]:
+    """Build the closed MedDRA vocabulary (Preferred Term -> code) from SIDER.
+
+    This is the vocabulary the term normalizer maps openFDA free text into, so
+    the LLM codes against the same terms already present in the Tier 1 data.
+    """
+    vocab: dict[str, str] = {}
+    for rows in sider_by_cid.values():
+        for row in rows:
+            pt, code = row.get("meddra_pt"), row.get("meddra_code")
+            if pt and code:
+                vocab.setdefault(pt, code)
+    return vocab
+
+
+def normalize_openfda_effects(
+    reactions_by_cid: dict[int, list[str]],
+    normalizer: TermNormalizer,
+) -> dict[str, list[dict]]:
+    """Code openFDA free-text reactions to MedDRA via the term normalizer.
+
+    Offline ETL only -- the LLM is confined here; runtime never calls it. Each
+    phrase the normalizer maps yields a row tagged ``source="LLM_NORMALIZED"``
+    with the original text preserved in ``source_id``. Unmapped phrases are
+    dropped (precision-first: never fabricate a code).
+    """
+    out: dict[str, list[dict]] = {}
+    coded = dropped = 0
+    for cid, phrases in reactions_by_cid.items():
+        for phrase in phrases:
+            result = normalizer.normalize(phrase)
+            if result is None:
+                dropped += 1
+                continue
+            pt, code = result
+            coded += 1
+            out.setdefault(str(cid), []).append(
+                {
+                    "name": phrase,
+                    "meddra_pt": pt,
+                    "meddra_code": code,
+                    "frequency": None,
+                    "source": "LLM_NORMALIZED",
+                    "source_id": phrase,
+                }
+            )
+    logger.info("Normalized openFDA effects: %d coded, %d dropped", coded, dropped)
+    return out
+
+
+def build_datasets(
+    inputs: BuildInputs,
+    out_dir: Path,
+    reactions_by_cid: dict[int, list[str]] | None = None,
+) -> None:
+    """Parse all sources and write the per-CID JSON datasets.
+
+    Always writes the three Tier 1 datasets. When ``reactions_by_cid`` is given,
+    it also builds the local LLM normalizer over the SIDER MedDRA vocabulary and
+    writes ``openfda_effects.json`` (Tier 2 text coded offline).
+    """
+    sider_by_cid = parse_sider(inputs.sider_se)
+    _write(out_dir, "sider_effects.json", {str(k): v for k, v in sider_by_cid.items()})
     _write(
         out_dir,
         "twosides_ddi.json",
@@ -86,6 +148,21 @@ def build_datasets(inputs: BuildInputs, out_dir: Path) -> None:
             for k, v in parse_chembl_moa(inputs.chembl_moa, inputs.unichem).items()
         },
     )
+
+    if reactions_by_cid:
+        # Imported here so the Tier 1 build never pulls the heavy embedding stack.
+        from src.data.pharmacovigilance.normalizer import (
+            LocalLLMNormalizer,
+            SapBERTCandidateGenerator,
+        )
+
+        vocab = build_meddra_vocab(sider_by_cid)
+        normalizer = LocalLLMNormalizer(SapBERTCandidateGenerator(vocab))
+        _write(
+            out_dir,
+            "openfda_effects.json",
+            normalize_openfda_effects(reactions_by_cid, normalizer),
+        )
 
 
 def main() -> None:
@@ -107,16 +184,29 @@ def main() -> None:
         required=True,
         help="TSV mapping RxNorm id -> PubChem CID (for TWOSIDES).",
     )
+    parser.add_argument(
+        "--openfda-reactions",
+        type=Path,
+        default=None,
+        help="Optional JSON mapping CID -> list of free-text reaction phrases; "
+        "when given, they are coded to MedDRA offline into openfda_effects.json.",
+    )
     parser.add_argument("--out", type=Path, default=Path("src/data/pharmacovigilance"))
     args = parser.parse_args()
     unichem = _load_tsv_map(args.unichem)
     rxnorm_to_cid = _load_tsv_map(args.rxnorm)
+
+    reactions_by_cid = None
+    if args.openfda_reactions is not None:
+        raw = json.loads(args.openfda_reactions.read_text(encoding="utf-8"))
+        reactions_by_cid = {int(cid): phrases for cid, phrases in raw.items()}
 
     build_datasets(
         BuildInputs(
             args.sider_se, args.twosides, args.chembl_moa, unichem, rxnorm_to_cid
         ),
         args.out,
+        reactions_by_cid,
     )
 
 

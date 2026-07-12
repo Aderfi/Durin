@@ -31,9 +31,13 @@ el enriquecimiento viven fuera (`repository`/servicios)*. La identidad química 
 - **Enfoque C — híbrido escalonado.** Tier 1 dataset local pre-construido + Tier 2 openFDA
   bajo demanda con cache. LLM confinado al ETL offline; runtime nunca llama LLM.
 - **Licencia: no comercial / académico.** SIDER (CC BY-NC-SA) entra como Tier 1 pleno.
-- **LLM: placeholder.** El normalizador de términos es una interfaz con implementación
-  placeholder; el usuario desarrollará un LLM local open-source (p.ej. Qwen / Gemma). No se
-  añade ninguna dependencia de modelo ni se fija un modelo concreto.
+- **LLM: implementado (retrieve-then-rank).** El normalizador de términos ya no es placeholder.
+  Sigue el estándar de *medical concept normalization*: (1) generación de candidatos con un
+  bi-encoder biomédico (**SapBERT**) sobre el vocabulario MedDRA cerrado, (2) reranking con un
+  LLM local vía Ollama que devuelve el **índice** de un candidato (o 0 = NONE). El código sale
+  de la tabla local por índice, nunca del LLM → alucinación de código imposible. Dependencia
+  pesada (`sentence-transformers`) confinada al grupo `extras`; el LLM sigue confinado al ETL
+  offline (runtime jamás lo llama).
 
 ## Reparto de capas
 
@@ -210,30 +214,44 @@ Regla dura: **el LLM nunca afirma un hecho clínico; solo codifica texto ya afir
 fuente.**
 
 - **Dónde**: solo en el ETL (`scripts/build_pharmacovigilance.py`) vía `normalizer.py`.
-  Runtime jamás llama LLM.
-- **Interfaz** (`pharmacovigilance/normalizer.py`):
+  Runtime jamás llama LLM; consume el `openfda_effects.json` ya construido offline.
+- **Arquitectura** (`pharmacovigilance/normalizer.py`) — *retrieve-then-rank*:
 
   ```python
   class TermNormalizer(Protocol):
-      def normalize(self, text: str) -> tuple[str, MedDRACode] | None:
-          """Map free-text adverse-reaction text to a MedDRA (PT, code), or None."""
+      def normalize(self, text: str) -> tuple[str, MedDRACode] | None: ...
+
+  class CandidateGenerator(Protocol):
+      def candidates(self, text: str, k: int) -> list[tuple[str, MedDRACode]]: ...
+
+  class SapBERTCandidateGenerator:
+      """Dense retrieval: SapBERT embeds the closed vocab once, cosine top-K."""
 
   class LocalLLMNormalizer:
-      """Placeholder for a locally-hosted open-source LLM (e.g. Qwen / Gemma).
+      """Ranks the retrieved shortlist with a local Ollama LLM.
 
-      To be implemented by the maintainer. Adds NO model dependency here.
+      The LLM returns the *index* of one candidate (or 0 = NONE); the (PT, code)
+      pair is read from the local candidate table, so it can neither invent a
+      code nor choose outside the closed vocabulary.
       """
-      def normalize(self, text: str) -> tuple[str, MedDRACode] | None:
-          raise NotImplementedError("Local LLM normalizer not yet implemented")
   ```
 
-- **Qué hace**: mapea texto de labels a MedDRA Preferred Term de un **vocabulario cerrado**
-  (lista MedDRA); no inventa términos.
+- **Qué hace**: (1) SapBERT recupera los top-K MedDRA PT más cercanos al texto (capta jerga
+  de labels que el matching léxico pierde: "can't sleep" → "Insomnia"); (2) el LLM elige uno.
 - **Qué NO hace**: no decide "fármaco X causa efecto Y" — esa aserción viene del label.
+- **Vocabulario cerrado**: el LLM solo elige entre los candidatos recuperados; nunca emite el
+  código. Índice fuera de rango / 0 / no numérico → `None` (se descarta, nunca se mis-codifica).
 - **Trazabilidad**: salida `source="LLM_NORMALIZED"`, texto original en `source_id`.
-- **Determinismo**: paso cacheado por hash de entrada → reruns estables.
-- **Sin modelo**: no se fija modelo ni dependencia; el placeholder lanza `NotImplementedError`
-  hasta que el usuario conecte su LLM local.
+- **Determinismo**: `temperature=0.0`.
+- **Dependencia**: `sentence-transformers` (SapBERT) en el grupo `extras`; import perezoso →
+  el paquete core no arrastra torch.
+
+> **Desviación consciente vs. el plan original.** El plan describía el output como *nombre de
+> PT* con lookup exacto `meddra_terms[answer]`. Se adoptó **índice de candidato** en su lugar:
+> misma garantía ("código de la tabla local, alucinación imposible") con **mejor recall** —
+> un modelo pequeño devuelve un entero de forma fiable, no re-teclea un PT de 19 chars sin
+> deriva de formato/mayúsculas que dispararía falsos `None`. El principio del plan se respeta;
+> solo mejora su codificación.
 
 ## Logging
 
@@ -264,7 +282,12 @@ Config central en `src/utils/logging.py`, usada por todos los módulos:
 - Severidad: `SideEffect` sin señal MedDRA → `severity=None`; con señal serio → `severity="severe"`,
   `severity_derived=True`.
 - Contrato `AgencyAdapter`: `CimaAdapter` mockeado (respuesta HTTP fija) → `Product` válido.
-- `TermNormalizer`: `LocalLLMNormalizer.normalize` lanza `NotImplementedError` (placeholder).
+- `TermNormalizer`: `LocalLLMNormalizer.normalize` con `CandidateGenerator` falso + cliente
+  Ollama stub (sin torch, sin red) → elige por índice, `0`/no-numérico/fuera-de-rango → `None`,
+  shortlist vacío no llama al modelo, excepción → `None` + log warning.
+- ETL openFDA: `normalize_openfda_effects` con normalizador falso → filas `LLM_NORMALIZED`
+  (texto original en `source_id`), frases no mapeadas descartadas; `split_adverse_reactions`
+  segmenta y deduplica; `enrichment` fusiona `openfda_effects.json` en `side_effects`.
 - Logging: un fallo de mapeo ID→CID emite un registro `warning` (capturado con `caplog`).
 - `pytest` verde, Tier 1 offline.
 
@@ -272,7 +295,10 @@ Config central en `src/utils/logging.py`, usada por todos los módulos:
 
 - El **motor de riesgo** en sí (consumidor de estos datos; proyecto siguiente).
 - Normalización de las **diferencias estructurales** entre agencias (hoy solo CIMA).
-- Implementación real del **LLM local** (solo placeholder + interfaz).
+- Extracción clínica (NER) real del blob openFDA: `split_adverse_reactions` es segmentación
+  best-effort por delimitadores, no NER; el normalizador precision-first descarta el ruido.
+- Descarga/fetch masivo de openFDA en el ETL: hoy el ETL codifica un `reactions.json`
+  (CID → frases) ya preparado; el `fetch_openfda_label` on-demand (Tier 2) ya existe aparte.
 - Otras agencias nacionales aparte de CIMA/AEMPS.
 - I/O en modelos (se mantiene la regla: enriquecimiento en `enrichment`/`repository`).
 ```

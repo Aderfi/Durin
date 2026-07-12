@@ -77,3 +77,46 @@ def test_unknown_cid_returns_empty(tmp_path):
     store = _store(tmp_path)
     assert store.side_effects(999999) == []
     assert store.interactions(999999) == []
+
+
+def test_side_effects_merges_openfda(tmp_path):
+    (tmp_path / "sider_effects.json").write_text(
+        json.dumps(
+            {
+                "2244": [
+                    {
+                        "name": "Gastrointestinal haemorrhage",
+                        "meddra_pt": "Gastrointestinal haemorrhage",
+                        "meddra_code": "10017955",
+                        "frequency": None,
+                        "source": "SIDER",
+                        "source_id": "CID100002244",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "openfda_effects.json").write_text(
+        json.dumps(
+            {
+                "2244": [
+                    {
+                        "name": "nausea",
+                        "meddra_pt": "Nausea",
+                        "meddra_code": "10028813",
+                        "frequency": None,
+                        "source": "LLM_NORMALIZED",
+                        "source_id": "nausea",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = PharmacovigilanceStore(data_dir=tmp_path)
+    effects = store.side_effects(2244)
+    assert {e.provenance.source for e in effects} == {"SIDER", "LLM_NORMALIZED"}
+    llm = next(e for e in effects if e.provenance.source == "LLM_NORMALIZED")
+    assert llm.meddra_code == "10028813"
+    assert llm.provenance.source_id == "nausea"

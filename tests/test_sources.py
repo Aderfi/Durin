@@ -144,3 +144,20 @@ def test_derive_severity_coded_not_serious():
 
 def test_derive_severity_no_signal():
     assert derive_severity(None, is_serious=False) == (None, False)
+
+
+def test_split_adverse_reactions_segments_and_dedupes():
+    from src.data.sources import split_adverse_reactions
+
+    assert split_adverse_reactions("Nausea, vomiting; headache.\nNausea") == [
+        "Nausea",
+        "vomiting",
+        "headache",
+    ]
+
+
+def test_split_adverse_reactions_empty():
+    from src.data.sources import split_adverse_reactions
+
+    assert split_adverse_reactions(None) == []
+    assert split_adverse_reactions("") == []
