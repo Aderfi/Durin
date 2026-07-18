@@ -1,12 +1,9 @@
 import datetime as dt
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from src.data import pubchem, repository
-from src.data.enrichment import PharmacovigilanceStore
-from src.data.pharmacovigilance import db
 from src.data.repository import get_enriched_drug
 from src.data.schemas import Drug, Med
 
@@ -92,24 +89,20 @@ def test_fetch_compound_404_returns_none(monkeypatch):
     assert pubchem.fetch_compound(1) is None
 
 
-def _empty_store(tmp_path: Path, effects: dict | None = None) -> PharmacovigilanceStore:
-    db_path = db.build_db(tmp_path / "pv.db", sider=effects)
-    return PharmacovigilanceStore(db_path)
-
-
-def test_get_enriched_drug_populates_effects(tmp_path: Path):
-    store = _empty_store(
-        tmp_path,
-        {
+def test_get_enriched_drug_populates_effects(pv_graph):
+    make_store, _ = pv_graph
+    store = make_store(
+        sider={
             "2244": [
                 {
                     "name": "Nausea",
+                    "meddra_pt": "Nausea",
                     "meddra_code": "10028813",
                     "source": "SIDER",
                     "source_id": "CID100002244",
                 }
             ],
-        },
+        }
     )
     fake_props = {"CID": 2244, "Title": "aspirin", "MolecularFormula": "C9H8O4"}
     with patch("src.data.repository.fetch_compound", return_value=fake_props):
@@ -120,7 +113,8 @@ def test_get_enriched_drug_populates_effects(tmp_path: Path):
     assert drug.side_effects[0].name == "Nausea"
 
 
-def test_get_enriched_drug_unknown_cid_returns_none(tmp_path: Path):
-    store = _empty_store(tmp_path)
+def test_get_enriched_drug_unknown_cid_returns_none(pv_graph):
+    make_store, _ = pv_graph
+    store = make_store()
     with patch("src.data.repository.fetch_compound", return_value=None):
         assert get_enriched_drug(2244, store) is None

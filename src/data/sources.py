@@ -36,12 +36,15 @@ _REACTION_SPLIT = re.compile(r"[\n;,.]+")
 _SERIOUS_MEDDRA_CODES: frozenset[str] = frozenset({"10017955"})
 
 # SIDER meddra_all_se.tsv column order (no header in the distributed file).
+# NOTE: SIDER codes side effects by UMLS CUI, not by numeric MedDRA code -- the
+# fifth column is the UMLS CUI *for the MedDRA term* (e.g. "C0000729"), so it is
+# named ``umls_cui`` here, not ``meddra_code``.
 _SIDER_SE_COLUMNS = [
     "stitch_flat",
     "stitch_stereo",
     "umls_label",
     "meddra_type",
-    "meddra_code",
+    "umls_cui",
     "side_effect_name",
 ]
 
@@ -114,7 +117,9 @@ def parse_sider(se_path: Path, freq_path: Path | None = None) -> dict[int, list[
             {
                 "name": row["side_effect_name"],
                 "meddra_pt": row["side_effect_name"],
-                "meddra_code": str(row["meddra_code"]),
+                # SIDER has no numeric MedDRA code; it carries a UMLS CUI. A real
+                # MedDRA code is only assigned on the openFDA/LLM normalizer path.
+                "umls_cui": str(row["umls_cui"]),
                 "frequency": None,
                 "source": "SIDER",
                 "source_id": row["stitch_flat"],

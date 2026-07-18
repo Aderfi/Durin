@@ -1,7 +1,7 @@
+import csv
 from pathlib import Path
 
-from scripts.build_pharmacovigilance import BuildInputs, build_database
-from src.data.pharmacovigilance import db as pvdb
+from scripts.build_pharmacovigilance import BuildInputs, build_import_csvs
 
 _SE_ROWS = (
     "CID100002244\tCID000002244\tC0018939\tPT\t10017955\tGastrointestinal haemorrhage\n"
@@ -19,22 +19,21 @@ _CHEMBL_CSV = (
 )
 
 
-def _count(conn, table: str, cid: int) -> int:
-    return conn.execute(
-        f"SELECT COUNT(*) FROM {table} WHERE cid = ?", (cid,)
-    ).fetchone()[0]
+def _rows(path: Path) -> list[dict]:
+    with path.open(encoding="utf-8", newline="") as fh:
+        return list(csv.DictReader(fh))
 
 
-def test_build_database_populates_all_tables(tmp_path: Path):
+def test_build_import_csvs_emits_all_files(tmp_path: Path):
     sider = tmp_path / "se.tsv"
     sider.write_text(_SE_ROWS, encoding="utf-8")
     twosides = tmp_path / "two.csv"
     twosides.write_text(_TWOSIDES_CSV, encoding="utf-8")
     chembl = tmp_path / "chembl.csv"
     chembl.write_text(_CHEMBL_CSV, encoding="utf-8")
-    db_path = tmp_path / "pv.db"
+    out = tmp_path / "import"
 
-    build_database(
+    build_import_csvs(
         BuildInputs(
             sider_se=sider,
             twosides=twosides,
@@ -42,15 +41,35 @@ def test_build_database_populates_all_tables(tmp_path: Path):
             unichem={"CHEMBL25": 2244},
             rxnorm_to_cid={"10355": 5391, "136411": 135398744},
         ),
-        db_path,
+        out,
     )
 
-    conn = pvdb.connect(db_path)
-    assert _count(conn, "sider_effects", 2244) == 1
-    # TWOSIDES row is emitted under both members of the pair.
-    assert _count(conn, "twosides_ddi", 5391) == 1
-    assert _count(conn, "twosides_ddi", 135398744) == 1
-    assert _count(conn, "chembl_moa", 2244) == 1
+    # Drug nodes: SIDER cid 2244 + ChEMBL cid 2244 + both TWOSIDES cids.
+    drug_cids = {int(r["cid:long"]) for r in _rows(out / "drugs.csv")}
+    assert {2244, 5391, 135398744} <= drug_cids
+
+    # One adverse-effect node keyed by SIDER's UMLS CUI + its HAS_SIDE_EFFECT edge.
+    effects = _rows(out / "adverse_effects.csv")
+    assert any(
+        r["code"] == "10017955" and r["coding_system"] == "UMLS_CUI" for r in effects
+    )
+    se_edges = _rows(out / "has_side_effect.csv")
+    assert any(
+        r[":START_ID(Drug)"] == "2244" and r[":END_ID(Effect)"] == "10017955"
+        for r in se_edges
+    )
+
+    # One Mechanism node + HAS_MECHANISM edge from ChEMBL.
+    assert any(r["mechanism"] == "COX inhibitor" for r in _rows(out / "mechanisms.csv"))
+    assert any(r[":START_ID(Drug)"] == "2244" for r in _rows(out / "has_mechanism.csv"))
+
+    # Single de-duplicated INTERACTS_WITH edge (canonical min/max pair), no header.
+    with (out / "interacts_with.csv").open(encoding="utf-8", newline="") as fh:
+        ddi = list(csv.reader(fh))
+    assert len(ddi) == 1
+    start, end = ddi[0][0], ddi[0][1]
+    assert {start, end} == {"5391", "135398744"}
+    assert int(start) < int(end)  # canonical ordering
 
 
 def test_build_meddra_vocab_dedupes():

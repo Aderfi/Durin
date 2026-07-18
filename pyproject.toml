@@ -10,6 +10,7 @@ dependencies = [
     "json5>=0.15.0",
     "jupyter>=1.1.1",
     "lab>=8.10",
+    "neo4j>=6.2.0",
     "openai>=2.45.0",
     "polars>=1.42.1",
     "pubchempy>=1.0.5",
@@ -25,6 +26,7 @@ dev = [
     "pre-commit>=4.6.0",
     "pytest>=9.1.1",
     "ruff>=0.15.21",
+    "testcontainers[neo4j]>=4.0",
 ]
 extras = [
     "lxml>=6.1.1",

@@ -123,6 +123,10 @@ class SideEffect(DomainModel):
     meddra_code: MedDRACode | None = Field(
         default=None, description="MedDRA numeric code, if coded."
     )
+    umls_cui: str | None = Field(
+        default=None,
+        description="UMLS CUI (SIDER's native coding; it carries no MedDRA code).",
+    )
     severity: SeverityLevel | None = Field(
         default=None,
         description="Severity: mild | moderate | severe. None if no source signal.",

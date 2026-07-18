@@ -10,7 +10,8 @@ ones by structure:
 matching on the full InChI (via PUG-REST POST) rather than the InChIKey, because
 PubChem canonicalizes structures and often indexes a molecule under a different
 salt/stereo InChIKey -- so InChIKey lookups miss where the InChI resolves. The
-recovered MoA rows are inserted into the existing ``chembl_moa`` table.
+recovered MoA rows are upserted into the graph as HAS_MECHANISM edges (creating
+the Drug/Mechanism nodes if the bulk import never saw them).
 
 Only molecules that HAVE a structure (InChI) are recoverable. Molecules without
 one are biologics (antibody-drug conjugates, peptides; ``structure_type = 'SEQ'``)
@@ -18,14 +19,13 @@ that have no PubChem compound at all -- nothing can map them, so they are report
 and skipped.
 
 Circumstantial: building UniChem and ChEMBL from matching releases avoids needing
-this. Run it AFTER the main build finishes (it writes to the same SQLite file).
+this. Run it AFTER the import finishes, against the RUNNING Neo4j server.
 
 Example:
     python recover_chembl_cids.py \\
       --moa-csv tmp/chembl_moa.csv \\
       --chembl-db tmp/chembl_37/chembl_37_sqlite/chembl_37.db \\
-      --unichem tmp/src1src22.txt \\
-      --db src/data/pharmacovigilance/pharmacovigilance.db
+      --unichem tmp/src1src22.txt
 """
 
 import argparse
@@ -42,7 +42,8 @@ from tenacity import (
     wait_exponential,
 )
 
-from src.data.pharmacovigilance import db
+from src.config import neo4j_config
+from src.data.pharmacovigilance import graph
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -51,6 +52,17 @@ _INCHI_CID = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/inchi/cids/JSON
 _TIMEOUT = 30  # seconds
 _THROTTLE = 0.2  # seconds between requests (<=5 req/s PUG limit)
 _SQL_CHUNK = 900  # keep under SQLite's parameter limit for IN (...)
+
+# Upsert recovered MoA into the graph: create the Drug/Mechanism nodes if the
+# bulk import never saw them, then attach the provenance-carrying edge.
+_UPSERT_MOA = f"""
+UNWIND $rows AS row
+MERGE (d:{graph.DRUG} {{cid: row.cid}})
+MERGE (m:{graph.MECHANISM} {{key: row.key}})
+SET m.mechanism = row.mechanism, m.action_type = row.action_type
+MERGE (d)-[r:{graph.HAS_MECHANISM}]->(m)
+SET r.source = row.source, r.source_id = row.source_id
+"""
 
 
 def _load_unichem_keys(path: Path) -> set[str]:
@@ -124,24 +136,27 @@ def _resolve_cids(inchis: dict[str, str]) -> dict[str, int]:
     return resolved
 
 
-def _moa_rows(moa_csv: Path, chembl_to_cid: dict[str, int]) -> dict[str, list[dict]]:
-    """Build {cid: [chembl_moa record]} for the recovered ChEMBL ids only."""
+def _moa_rows(moa_csv: Path, chembl_to_cid: dict[str, int]) -> list[dict]:
+    """Build flat HAS_MECHANISM upsert rows for the recovered ChEMBL ids only."""
     frame = pl.read_csv(moa_csv).filter(
         pl.col("molecule_chembl_id").is_in(list(chembl_to_cid))
     )
-    by_cid: dict[str, list[dict]] = {}
+    rows: list[dict] = []
     for row in frame.iter_rows(named=True):
         chembl_id = row["molecule_chembl_id"]
-        cid = chembl_to_cid[chembl_id]
-        by_cid.setdefault(str(cid), []).append(
+        mechanism = row["mechanism_of_action"]
+        action_type = row["action_type"] or ""
+        rows.append(
             {
-                "mechanism": row["mechanism_of_action"],
-                "action_type": row["action_type"],
+                "cid": chembl_to_cid[chembl_id],
+                "key": f"{mechanism}||{action_type}",
+                "mechanism": mechanism,
+                "action_type": action_type,
                 "source": "ChEMBL",
                 "source_id": chembl_id,
             }
         )
-    return by_cid
+    return rows
 
 
 def main() -> None:
@@ -152,9 +167,9 @@ def main() -> None:
     parser.add_argument("--chembl-db", type=Path, required=True)
     parser.add_argument("--unichem", type=Path, required=True)
     parser.add_argument(
-        "--db",
-        type=Path,
-        default=Path("src/data/pharmacovigilance/pharmacovigilance.db"),
+        "--database",
+        default=None,
+        help="Target Neo4j database (defaults to NEO4J_DATABASE / 'neo4j').",
     )
     args = parser.parse_args()
 
@@ -170,20 +185,21 @@ def main() -> None:
     )
 
     chembl_to_cid = _resolve_cids(inchis)
-    by_cid = _moa_rows(args.moa_csv, chembl_to_cid)
-    inserted = sum(len(rows) for rows in by_cid.values())
+    rows = _moa_rows(args.moa_csv, chembl_to_cid)
 
-    conn = db.connect(args.db)
+    config = neo4j_config()
+    database = args.database or config.database
+    drv = graph.driver(config)
     try:
-        db.insert_by_cid(conn, "chembl_moa", by_cid)
-        conn.commit()
+        with drv.session(database=database) as session:
+            session.run(_UPSERT_MOA, rows=rows)
     finally:
-        conn.close()
+        drv.close()
     logger.info(
-        "Recovered %d CIDs, inserted %d chembl_moa rows into %s",
+        "Recovered %d CIDs, upserted %d HAS_MECHANISM edges into %s",
         len(chembl_to_cid),
-        inserted,
-        args.db,
+        len(rows),
+        database,
     )
 
 

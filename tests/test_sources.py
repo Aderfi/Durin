@@ -46,7 +46,9 @@ def test_parse_sider_groups_by_cid(tmp_path):
     assert set(result) == {2244}
     effects = result[2244]
     assert len(effects) == 2
-    first = next(e for e in effects if e["meddra_code"] == "10017955")
+    # SIDER's fifth column is a UMLS CUI, surfaced as `umls_cui` (not a MedDRA code).
+    first = next(e for e in effects if e["umls_cui"] == "10017955")
+    assert "meddra_code" not in first
     assert first["name"] == "Gastrointestinal haemorrhage"
     assert first["source"] == "SIDER"
     assert first["source_id"] == "CID100002244"
