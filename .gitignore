@@ -27,3 +27,4 @@ tmp/
 # Generated pharmacovigilance datasets (built offline by build_pharmacovigilance.py)
 src/data/pharmacovigilance/*.db
 src/data/pharmacovigilance/*.json
+CLAUDE.md
