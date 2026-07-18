@@ -59,7 +59,7 @@ cells.append(md(
 cells.append(code(
     "import sys\n"
     "from pathlib import Path\n\n"
-    "ROOT = Path.cwd().parent  # el notebook vive en notebooks/ -> raíz del repo\n"
+    "ROOT = Path.cwd().parent  # the notebook lives in notebooks/ -> repo root\n"
     "if str(ROOT) not in sys.path:\n"
     "    sys.path.insert(0, str(ROOT))\n\n"
     "%load_ext autoreload\n"
@@ -68,11 +68,10 @@ cells.append(code(
     "from neo4j.exceptions import AuthError, ServiceUnavailable\n\n"
     "from src.config import neo4j_config\n"
     "from src.data.enrichment import PharmacovigilanceStore, enrich_drug\n"
-    "from src.data.pharmacovigilance import graph\n"
     "from src.data.repository import get_enriched_drug\n"
     "from src.data.schemas import ATCCode, Drug, Interaction, Med, Patient, SideEffect\n\n"
     "cfg = neo4j_config()\n"
-    "print(f\"uri={cfg.uri}  user={cfg.user}  database={cfg.database}\")  # nunca la contraseña"
+    "print(f\"uri={cfg.uri}  user={cfg.user}  database={cfg.database}\")  # never the password"
 ))
 cells.append(md(
     "## Conexión y descubrimiento de un CID\n\n"
@@ -94,14 +93,14 @@ cells.append(code(
     "        _rec = _s.run(_DISCOVER).single()\n"
     "    SAMPLE_CID = _rec[\"cid\"] if _rec else None\n"
     "    if SAMPLE_CID is None:\n"
-    "        print(\"Neo4j conectado pero sin aristas HAS_SIDE_EFFECT — se omite la BD.\")\n"
+    "        print(\"Neo4j connected but no HAS_SIDE_EFFECT edges — skipping the DB.\")\n"
     "    else:\n"
-    "        print(f\"Conectado. CID de muestra = {SAMPLE_CID}\")\n"
+    "        print(f\"Connected. Sample CID = {SAMPLE_CID}\")\n"
     "except (ServiceUnavailable, AuthError) as exc:\n"
     "    if STORE is not None:\n"
     "        STORE.close()\n"
     "    STORE = None\n"
-    "    print(f\"Neo4j no disponible ({type(exc).__name__}) — se omiten las celdas de BD.\")"
+    "    print(f\"Neo4j unavailable ({type(exc).__name__}) — skipping DB cells.\")"
 ))
 nb["cells"] = cells
 nb["metadata"] = {"language_info": {"name": "python"}}
