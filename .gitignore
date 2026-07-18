@@ -1,4 +1,4 @@
-__pycache__/
+*__pycache__/
 *.pyc
 .env
 .venv/
@@ -9,6 +9,7 @@ models/*.pkl
 models/*.h5
 *.log
 .ipynb_checkpoints/
+*.db
 
 graphify-out/
 
@@ -28,3 +29,4 @@ tmp/
 src/data/pharmacovigilance/*.db
 src/data/pharmacovigilance/*.json
 CLAUDE.md
+.claudeignore
