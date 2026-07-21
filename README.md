@@ -36,6 +36,19 @@ src/
 scripts/       # ATC/DDD scraper
 ```
 
+## Documentation
+
+Design-decision writeups for what's been built so far, one topic per file:
+> ⚠️ **Early development.**
+
+- [`docs/pydantic_models.md`](docs/pydantic_models.md) — the Pydantic schemas for drugs, medications, and patients.
+- [`docs/ph_data_pipeline.md`](docs/ph_data_pipeline.md) — sourcing (SIDER/ChEMBL/TWOSIDES/openFDA), provenance, and the local LLM's narrow role in coding free text.
+- [`docs/risk_engine.md`](docs/risk_engine.md) — the four risk-axis evaluators and how they aggregate into a `RiskAssessment`.
+- [`docs/neo4j_graph_mig.md`](docs/neo4j_graph_mig.md) — why the pharmacovigilance store moved from SQLite to Neo4j, and the graph model it uses.
+- [`docs/graph_enrichment.md`](docs/graph_enrichment.md) — the notebook that validates the domain models against the live graph.
+- [`docs/snakemake_etl.md`](docs/snakemake_etl.md) — the `Snakefile` that wires up the offline ETL scripts.
+- [`docs/docker.md`](docs/docker.md) — the Docker dev/CI setup (`Dockerfile`, `docker-compose.yml`).
+
 ## Status & disclaimer
 
 This is a work in progress and **not a medical device**. It provides no clinical advice and must not be used to make treatment decisions. All outputs are experimental and unvalidated.

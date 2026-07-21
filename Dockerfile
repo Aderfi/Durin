@@ -11,7 +11,7 @@
 # ---------------------------------------------------------------------------
 # cpu: python:slim base, prebuilt CPU wheel for llama-cpp-python.
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim AS cpu
+FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6 AS cpu
 
 ENV PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.30@sha256:93b61e21202b1dab861092748e46bbd6e0e41dd84f59b9174efd2353186e1b47 /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 
@@ -49,7 +49,7 @@ CMD ["pytest"]
 # a source rebuild here. Building this target does NOT require a physical
 # GPU; only `docker run --gpus all` against it does.
 # ---------------------------------------------------------------------------
-FROM nvidia/cuda:13.0.0-devel-ubuntu24.04 AS gpu
+FROM nvidia/cuda:13.0.0-devel-ubuntu24.04@sha256:1e8ac7a54c184a1af8ef2167f28fa98281892a835c981ebcddb1fad04bdd452d AS gpu
 
 ENV PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
@@ -62,7 +62,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.30@sha256:93b61e21202b1dab861092748e46bbd6e0e41dd84f59b9174efd2353186e1b47 /uv /uvx /usr/local/bin/
 RUN uv python install 3.14
 
 WORKDIR /app
@@ -74,9 +74,11 @@ COPY . .
 RUN uv sync --frozen
 
 # Recompile llama-cpp-python against the CUDA toolchain now present in the
-# image (the layer above installed the plain CPU wheel from PyPI).
+# image (the layer above installed the plain CPU wheel from PyPI). Pinned to
+# the exact version uv.lock resolved so this rebuild can't silently drift
+# from the version the cpu target ships.
 RUN CMAKE_ARGS="-DGGML_CUDA=on" uv pip install --no-cache-dir \
-        --force-reinstall --no-binary llama-cpp-python llama-cpp-python
+        --force-reinstall --no-binary llama-cpp-python llama-cpp-python==0.3.34
 
 ENTRYPOINT ["uv", "run"]
 CMD ["pytest"]
