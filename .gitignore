@@ -25,6 +25,9 @@ src/data/pharmacovigilance/_cache/
 # One-off ETL source downloads
 tmp/
 
+# Snakemake run metadata/locks (local, never shared)
+.snakemake/
+
 # Generated pharmacovigilance datasets (built offline by build_pharmacovigilance.py)
 src/data/pharmacovigilance/*.db
 src/data/pharmacovigilance/*.json

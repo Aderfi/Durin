@@ -1,12 +1,10 @@
 #!/usr/bin/env python
+import argparse
 import json
 import re
 from pathlib import Path
 
 import polars as pl
-
-_FILE_NAME = "icd_codes.json"
-_FILE_OUTPUT = Path("plain_icd_codes.json")
 
 _ICD_PATTERN = re.compile(
     r"^[A-Z]\d{2}(\.\d{1,2})?$"
@@ -46,7 +44,16 @@ def plain_json(data: dict) -> list[dict]:
 
 
 def main():
-    df = pl.DataFrame(plain_json(import_file(_FILE_NAME)))
+    parser = argparse.ArgumentParser(
+        description="Flatten the nested ICD-10 catalog into a code->description map"
+    )
+    parser.add_argument("--input", type=Path, default=Path("scripts/icd_codes.json"))
+    parser.add_argument(
+        "--output", type=Path, default=Path("scripts/plain_icd_codes.json")
+    )
+    args = parser.parse_args()
+
+    df = pl.DataFrame(plain_json(import_file(args.input)))
 
     df = df.filter(
         pl.col("codigo").str.contains(_ICD_PATTERN.pattern),
@@ -56,8 +63,12 @@ def main():
 
     df = {row["codigo"]: row["descripcion"] for row in df.to_dicts()}
 
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     json.dump(
-        df, open(_FILE_OUTPUT, "w", encoding="utf-8"), ensure_ascii=False, indent=2
+        df,
+        open(args.output, "w", encoding="utf-8"),
+        ensure_ascii=False,
+        indent=2,
     )
     # Dict structure: {"codigo value": "descripcion"}
 
