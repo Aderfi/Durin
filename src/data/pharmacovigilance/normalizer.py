@@ -12,8 +12,10 @@ Architecture is the industry-standard retrieve-then-rank:
    text and the closed vocabulary, then retrieves the top-K nearest Preferred
    Terms by cosine similarity. This handles colloquial label phrasing
    ("can't sleep" -> "Insomnia") that plain string matching misses.
-2. Ranking / disambiguation -- a locally-hosted LLM (via Ollama) picks ONE
-   candidate from the shortlist, or NONE.
+2. Ranking / disambiguation -- a locally-hosted LLM (via llama.cpp, in-process
+   GGUF) picks ONE candidate from the shortlist, or NONE. A GBNF grammar
+   constrains the model to emit only digits, so the answer is always a clean
+   index rather than free text to parse.
 
 Safety by construction:
 - Closed vocabulary: the LLM only ever chooses among the retrieved candidates.
@@ -34,17 +36,32 @@ from __future__ import annotations
 import re
 from typing import Protocol, runtime_checkable
 
-from openai import OpenAI
+import os
+
+from llama_cpp import Llama, LlamaGrammar
 
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-OLLAMA_BASE_URL = "http://localhost:11434"
-LLM_MODEL = "gemma2"
-SAPBERT_MODEL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
-DEFAULT_TOP_K = 25
+# Constants for the local LLM normalizer (llama.cpp, in-process GGUF)
 
+LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "/models/gemma4_e4b_it.gguf")
+
+SAPBERT_MODEL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+
+DEFAULT_TOP_K = 5
+
+DEFAULT_PARAMS = {
+    "temperature": 0.0,
+    "top_k": 1,
+    "top_p": 1.0,
+    "min_p": 0.0,
+    "repeat_penalty": 1.0,
+    "seed": 711,
+}
+
+ANSWER_GRAMMAR = "root ::= [0-9]+"
 
 @runtime_checkable
 class TermNormalizer(Protocol):
@@ -113,49 +130,78 @@ class SapBERTCandidateGenerator:
 
 
 class LocalLLMNormalizer:
-    """Normalizer that ranks retrieved candidates with a local LLM via Ollama.
+    """Normalizer that ranks retrieved candidates with a local llama.cpp LLM.
 
-    Uses Ollama's OpenAI-compatible API (through the `openai` client). The LLM
-    only ever picks the *index* of one retrieved candidate (or 0 for NONE); the
-    (Preferred Term, code) pair is read from the local candidate table, so the
-    model can neither invent a code nor choose outside the closed vocabulary.
+    Loads a GGUF model in-process (no server) via `llama_cpp.Llama`. A GBNF
+    grammar (`ANSWER_GRAMMAR`) constrains generation to digits only, so the
+    model can neither invent a code nor choose outside the closed vocabulary
+    -- it only ever emits the *index* of one retrieved candidate (or 0 for
+    NONE); the (Preferred Term, code) pair is read from the local candidate
+    table.
     """
 
     def __init__(
         self,
         candidate_generator: CandidateGenerator,
-        model: str = LLM_MODEL,
-        base_url: str = OLLAMA_BASE_URL,
+        model_path: str = LLM_MODEL_PATH,
         top_k: int = DEFAULT_TOP_K,
+        params: dict | None = None,
     ) -> None:
-        """Initialize the local LLM normalizer.
+        """Initialize the local LLM normalizer (llama.cpp backend).
 
         Args:
             candidate_generator: Retrieval stage that shortlists candidates.
-            model: Name of the local Ollama model to use (e.g. "gemma2", "qwen2").
-            base_url: Base URL where the Ollama server is running.
+            model_path: Path to the local .gguf model file.
             top_k: Number of candidates to retrieve and present to the model.
+            params: Sampling params override (defaults to DEFAULT_PARAMS).
         """
         self.generator = candidate_generator
-        self.model = model
-        self.base_url = base_url.rstrip("/")
         self.top_k = top_k
-        self.client = OpenAI(base_url=f"{self.base_url}/v1", api_key="ollama")
+        self.params = {**DEFAULT_PARAMS, **(params or {})}
+        self.grammar = LlamaGrammar.from_string(ANSWER_GRAMMAR)
+        self.llm = Llama(
+            model_path=model_path,
+            n_ctx=2048,
+            seed=self.params["seed"],
+            verbose=False,
+            flash_attn=True,
+        )
 
     def _build_prompt(self, text: str, candidates: list[tuple[str, str]]) -> str:
         listing = "\n".join(
             f"{i}. {pt}" for i, (pt, _) in enumerate(candidates, start=1)
         )
+        return self._render_prompt(text, listing)
+    
+    def _render_prompt(self, text: str, listing: str) -> str:
         return (
-            "You are a strict medical coding assistant performing entity "
-            "linking. Choose the single MedDRA Preferred Term from the numbered "
-            "list below that best matches the adverse-reaction text. If none "
-            "apply, answer 0.\n\n"
-            f'Adverse-reaction text: "{text}"\n\n'
-            f"Candidates:\n{listing}\n\n"
-            "Answer with ONLY the number of the best match, or 0 if none apply."
-        )
-
+        "You are a strict medical coding assistant performing entity linking "
+        "between free-text adverse-reaction descriptions and MedDRA Preferred "
+        "Terms (PTs).\n\n"
+        "Rules:\n"
+        "- Choose the single candidate PT that best matches the MEDICAL MEANING "
+        "of the adverse-reaction text, not surface wording similarity.\n"
+        "- A match must be a legitimate synonym, abbreviation, lay term, or "
+        "narrower/broader clinical expression of the SAME clinical concept. "
+        "Do not match based on partial word overlap alone.\n"
+        "- If two candidates seem plausible, choose the more clinically precise "
+        "one, not the most general.\n"
+        "- If the text describes a concept not represented by any candidate, "
+        "or is too vague/ambiguous to map confidently to one specific PT, "
+        "answer 0. It is always better to answer 0 than to guess.\n"
+        "- Do not use outside medical knowledge to reinterpret the text beyond "
+        "what it states. Do not infer a diagnosis or mechanism not implied by "
+        "the wording itself.\n\n"
+        "Output format:\n"
+        "- Answer with ONLY the number of the best-matching candidate, or 0 if "
+        "none apply.\n"
+        "- No explanation, no punctuation, no extra text, no restating the "
+        "number in words. Output must be a single integer and nothing else.\n\n"
+        f'Adverse-reaction text: "{text}"\n\n'
+        f"Candidates:\n{listing}\n\n"
+        "Answer:"
+    )
+    
     @staticmethod
     def _parse_index(answer: str) -> int | None:
         """Extract the first integer the model emitted, or None if absent."""
@@ -169,12 +215,17 @@ class LocalLLMNormalizer:
 
         prompt = self._build_prompt(text, candidates)
         try:
-            completion = self.client.chat.completions.create(
-                model=self.model,
+            completion = self.llm.create_chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.0,
+                temperature=self.params["temperature"],
+                top_k=self.params["top_k"],
+                top_p=self.params["top_p"],
+                min_p=self.params["min_p"],
+                repeat_penalty=self.params["repeat_penalty"],
+                max_tokens=4,
+                grammar=self.grammar,
             )
-            answer = (completion.choices[0].message.content or "").strip()
+            answer = (completion["choices"][0]["message"]["content"] or "").strip()
         except Exception as exc:
             logger.warning("LLM normalize failed for %r: %s", text, exc)
             return None

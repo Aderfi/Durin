@@ -1,11 +1,15 @@
 """Offline tests for the retrieve-then-rank term normalizer.
 
-No torch and no Ollama: the retrieval stage is a fake CandidateGenerator and the
-Ollama client is replaced with a stub, so only the ranking/parsing logic runs.
+No SapBERT and no real GGUF load: the retrieval stage is a fake
+CandidateGenerator and ``normalizer_module.Llama`` is monkeypatched to a fake
+model, so only the ranking/parsing logic in ``LocalLLMNormalizer`` runs.
 """
 
 import logging
 
+import pytest
+
+from src.data.pharmacovigilance import normalizer as normalizer_module
 from src.data.pharmacovigilance.normalizer import (
     CandidateGenerator,
     LocalLLMNormalizer,
@@ -24,30 +28,30 @@ class _FakeGenerator:
         return self._candidates[:k]
 
 
-class _StubCompletions:
+class _FakeLlama:
+    """Stand-in for ``llama_cpp.Llama``: records calls, returns a scripted answer."""
+
     def __init__(self, content: str | None = None, exc: Exception | None = None):
         self._content = content
         self._exc = exc
         self.calls: list[dict] = []
 
-    def create(self, **kwargs):
+    def create_chat_completion(self, **kwargs):
         self.calls.append(kwargs)
         if self._exc is not None:
             raise self._exc
-        message = type("_Msg", (), {"content": self._content})()
-        choice = type("_Choice", (), {"message": message})()
-        return type("_Resp", (), {"choices": [choice]})()
+        return {"choices": [{"message": {"content": self._content}}]}
 
 
-class _StubClient:
-    def __init__(self, content: str | None = None, exc: Exception | None = None):
-        self.completions = _StubCompletions(content, exc)
-        self.chat = type("_Chat", (), {"completions": self.completions})()
+@pytest.fixture(autouse=True)
+def _no_real_gguf_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never load a real GGUF file while constructing a normalizer under test."""
+    monkeypatch.setattr(normalizer_module, "Llama", lambda **kwargs: _FakeLlama())
 
 
 def _make_normalizer(candidates, content=None, exc=None) -> LocalLLMNormalizer:
     normalizer = LocalLLMNormalizer(_FakeGenerator(candidates))
-    normalizer.client = _StubClient(content, exc)  # replace the live Ollama client
+    normalizer.llm = _FakeLlama(content, exc)  # scripted answer for test
     return normalizer
 
 
@@ -83,11 +87,11 @@ def test_out_of_range_index_is_none():
 def test_empty_shortlist_skips_the_model():
     normalizer = _make_normalizer([], content="1")
     assert normalizer.normalize("anything") is None
-    assert normalizer.client.completions.calls == []  # model never queried
+    assert normalizer.llm.calls == []  # model never queried
 
 
 def test_exception_logs_and_returns_none(caplog):
-    normalizer = _make_normalizer(_CANDIDATES, exc=RuntimeError("ollama down"))
+    normalizer = _make_normalizer(_CANDIDATES, exc=RuntimeError("llama.cpp down"))
     with caplog.at_level(logging.WARNING):
         assert normalizer.normalize("headache") is None
     assert any("LLM normalize failed" in r.message for r in caplog.records)
