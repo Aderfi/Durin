@@ -1,4 +1,5 @@
 *__pycache__/
+
 *.pyc
 .env
 .venv/
@@ -32,4 +33,14 @@ tmp/
 src/data/pharmacovigilance/*.db
 src/data/pharmacovigilance/*.json
 CLAUDE.md
+.claude/
 .claudeignore
+
+docs/superpowers/
+
+.superpowers/
+.vscode/
+*pytest*
+*ruff*
+
+models/gemma4_e4b_it.gguf
