@@ -49,8 +49,7 @@ CONSTRAINTS: tuple[str, ...] = (
     f"FOR (m:{MECHANISM}) REQUIRE m.key IS UNIQUE",
 )
 
-# Runtime reads. Each RETURN reproduces the dict shape the old SQLite rows had,
-# so enrichment.py's model assembly is unchanged.
+# Runtime reads.
 SIDE_EFFECTS_BY_CID = f"""
 MATCH (d:{DRUG} {{cid: $cid}})-[r:{HAS_SIDE_EFFECT}]->(e:{ADVERSE_EFFECT})
 RETURN r.name AS name, e.meddra_pt AS meddra_pt,
