@@ -1,4 +1,0 @@
-# Large build-time inputs / generated DB — excluded from Claude Code teleport.
-# These are gitignored too; listed here so cloud teleport skips the ~63G they add.
-tmp/
-src/data/pharmacovigilance/pharmacovigilance.db
