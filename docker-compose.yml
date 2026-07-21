@@ -1,0 +1,69 @@
+services:
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-durin_dev_password}
+    ports:
+      - "7474:7474"  # browser UI, host convenience
+      - "7687:7687"  # bolt
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      target: cpu
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-durin_dev_password}
+      NEO4J_DATABASE: neo4j
+      LLM_MODEL_PATH: /models/gemma4_e4b_it.gguf
+    volumes:
+      - .:/app
+      - durin-venv:/app/.venv   # keep the image's compiled venv; don't let the bind mount shadow it
+      - ./models:/models:ro
+      # Uncomment to let tests/test_*.py spin up ephemeral Neo4j containers via
+      # testcontainers from inside this container (sibling-container pattern):
+      # - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /app
+
+  app-gpu:
+    profiles: ["gpu"]  # opt-in: `docker compose --profile gpu run app-gpu`
+    build:
+      context: .
+      target: gpu
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-durin_dev_password}
+      NEO4J_DATABASE: neo4j
+      LLM_MODEL_PATH: /models/gemma4_e4b_it.gguf
+    volumes:
+      - .:/app
+      - durin-venv-gpu:/app/.venv
+      - ./models:/models:ro
+    working_dir: /app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  neo4j-data:
+  durin-venv:
+  durin-venv-gpu:

@@ -1,0 +1,21 @@
+# Git LFS — large binary artifacts, never diffed/merged as text.
+models/*.gguf filter=lfs diff=lfs merge=lfs -text
+
+# Line-ending normalization
+* text=auto eol=lf
+
+# Large models and binaries via Git LFS
+*.gguf filter=lfs diff=lfs merge=lfs -text
+*.safetensors filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text
+
+# Binaries that should not be treated as text
+*.png binary
+*.pdf binary
+
+# Notebooks don't count as "code" in language statistics
+*.ipynb linguist-documentation
+
+# Do not export in releases/archives
+tests/ export-ignore
+.github/ export-ignore
