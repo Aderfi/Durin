@@ -1,3 +1,3 @@
-sider_url: "http://sideeffects.embl.de/media/download/meddra_all_se.tsv.gz"
+sider_url: "https://sideeffects.embl.de/media/download/meddra_all_se.tsv.gz"
 tmp_dir: "tmp"
 neo4j_import_dir: "tmp/neo4j_import"

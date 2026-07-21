@@ -17,7 +17,7 @@ TWOSIDES is large (~89M rows); its interactions are de-duplicated to one edge pe
 unordered pair by a streaming Polars pipeline that never loads the file into RAM.
 
 Source downloads:
-  SIDER 4.1    : http://sideeffects.embl.de/media/download/meddra_all_se.tsv.gz
+  SIDER 4.1    : https://sideeffects.embl.de/media/download/meddra_all_se.tsv.gz
   TWOSIDES     : https://tatonetti.c2b2.columbia.edu/nsides/  (CSV export)
   ChEMBL MoA   : ChEMBL DB `mechanism` table export (CSV)
   UniChem map  : https://www.ebi.ac.uk/unichem/  (ChEMBL id -> PubChem CID)

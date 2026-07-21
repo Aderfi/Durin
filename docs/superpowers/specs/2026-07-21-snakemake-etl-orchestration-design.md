@@ -32,7 +32,7 @@ no lo automatiza.
   y `recover_chembl_cids.py` (que además escribe en una DB ya viva, rompiendo el
   modelo de DAG por ficheros de Snakemake) quedan fuera, sin cambios.
 - **Adquisición de datos crudos: mixta.** Solo SIDER tiene URL de fichero estable
-  (`http://sideeffects.embl.de/media/download/meddra_all_se.tsv.gz`) → regla propia.
+  (`https://sideeffects.embl.de/media/download/meddra_all_se.tsv.gz`) → regla propia.
   TWOSIDES/ChEMBL MoA/UniChem son exports de portal sin URL fija → inputs manuales
   fijos en `tmp/`; si faltan, el `MissingInputException` nativo de Snakemake ya
   nombra el fichero exacto — no se añade mensajería custom encima.
@@ -127,7 +127,7 @@ no están.
 ## `config.yaml`
 
 ```yaml
-sider_url: "http://sideeffects.embl.de/media/download/meddra_all_se.tsv.gz"
+sider_url: "https://sideeffects.embl.de/media/download/meddra_all_se.tsv.gz"
 tmp_dir: "tmp"
 neo4j_import_dir: "tmp/neo4j_import"
 ```
